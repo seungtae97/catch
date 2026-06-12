@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RoomManager, MAX_PLAYERS, EXPANSION_MAX_PLAYERS, TURN_DURATION_SECONDS } from '../src/game/roomManager.js';
+import { RoomManager, MAX_PLAYERS, EXPANSION_MAX_PLAYERS, TURN_DURATION_SECONDS, DEFAULT_WORDS } from '../src/game/roomManager.js';
 
 test('creates a room with a host player and scalable player caps', () => {
   const rooms = new RoomManager({ codeGenerator: () => 'ABCD' });
@@ -13,6 +13,37 @@ test('creates a room with a host player and scalable player caps', () => {
   assert.equal(snapshot.players.length, 1);
   assert.equal(snapshot.players[0].name, 'Mina');
   assert.equal(snapshot.players[0].isHost, true);
+});
+
+test('ships with a diverse built-in word pool', () => {
+  const uniqueWords = new Set(DEFAULT_WORDS);
+
+  assert.ok(DEFAULT_WORDS.length >= 80);
+  assert.equal(uniqueWords.size, DEFAULT_WORDS.length);
+  assert.ok(DEFAULT_WORDS.includes('타임머신'));
+  assert.ok(DEFAULT_WORDS.includes('번개'));
+  assert.ok(DEFAULT_WORDS.includes('치킨'));
+});
+
+test('draws words from a shuffled deck without repeats until the deck is exhausted', () => {
+  const rooms = new RoomManager({
+    codeGenerator: () => 'RAND',
+    words: ['alpha', 'bravo', 'charlie', 'delta'],
+    random: () => 0
+  });
+  rooms.createRoom({ socketId: 'host', name: 'Host' });
+  rooms.joinRoom({ code: 'RAND', socketId: 'guest', name: 'Guest' });
+
+  const seen = [];
+  rooms.startGame({ code: 'RAND', socketId: 'host', viewerSocketId: 'host' });
+  seen.push(rooms.rooms.get('RAND').currentTurn.word);
+  for (let index = 0; index < 3; index += 1) {
+    rooms.nextTurn({ code: 'RAND', socketId: 'host', viewerSocketId: 'host' });
+    seen.push(rooms.rooms.get('RAND').currentTurn.word);
+  }
+
+  assert.deepEqual(seen, ['bravo', 'charlie', 'delta', 'alpha']);
+  assert.equal(new Set(seen).size, 4);
 });
 
 test('rejects joins after the current 4-player limit', () => {

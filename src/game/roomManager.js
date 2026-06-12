@@ -4,7 +4,7 @@ export const TURN_DURATION_SECONDS = 60;
 export const GUESSER_POINTS = 10;
 export const DRAWER_POINTS = 5;
 
-const DEFAULT_WORDS = [
+export const DEFAULT_WORDS = Object.freeze([
   '사과',
   '바다',
   '학교',
@@ -16,14 +16,121 @@ const DEFAULT_WORDS = [
   '피아노',
   '강아지',
   '김치',
-  '자동차'
-];
+  '자동차',
+  '달팽이',
+  '우주선',
+  '타임머신',
+  '번개',
+  '치킨',
+  '떡볶이',
+  '아이스크림',
+  '눈사람',
+  '드래곤',
+  '마법사',
+  '공룡',
+  '기린',
+  '펭귄',
+  '상어',
+  '문어',
+  '나비',
+  '꽃다발',
+  '선인장',
+  '해바라기',
+  '무지개',
+  '구름',
+  '폭포',
+  '화산',
+  '등대',
+  '성',
+  '다리',
+  '기차',
+  '잠수함',
+  '헬리콥터',
+  '자전거',
+  '스케이트',
+  '로봇',
+  '컴퓨터',
+  '휴대폰',
+  '카메라',
+  '시계',
+  '안경',
+  '가방',
+  '운동화',
+  '왕관',
+  '보물상자',
+  '열쇠',
+  '지도',
+  '책',
+  '연필',
+  '붓',
+  '팔레트',
+  '마이크',
+  '기타',
+  '드럼',
+  '바이올린',
+  '케이크',
+  '햄버거',
+  '피자',
+  '수박',
+  '바나나',
+  '포도',
+  '딸기',
+  '호박',
+  '도넛',
+  '컵라면',
+  '우주인',
+  '외계인',
+  '유령',
+  '좀비',
+  '닌자',
+  '해적',
+  '기사',
+  '경찰',
+  '소방관',
+  '의사',
+  '요리사',
+  '탐정',
+  '축구공',
+  '농구공',
+  '야구방망이',
+  '트로피',
+  '텐트',
+  '모닥불',
+  '낚싯대',
+  '눈썰매',
+  '서핑보드',
+  '풍선',
+  '선물상자',
+  '크리스마스트리',
+  '할로윈호박',
+  '팝콘',
+  '영화관',
+  '놀이공원',
+  '회전목마',
+  '관람차',
+  '롤러코스터',
+  '미끄럼틀',
+  '그네',
+  '침대',
+  '소파',
+  '냉장고',
+  '세탁기',
+  '엘리베이터',
+  '에스컬레이터',
+  '신호등',
+  '횡단보도',
+  '우체통',
+  '편지',
+  '하트',
+  '별똥별'
+]);
 
 export class RoomManager {
-  constructor({ codeGenerator = makeRoomCode, words = DEFAULT_WORDS, now = () => Date.now() } = {}) {
+  constructor({ codeGenerator = makeRoomCode, words = DEFAULT_WORDS, now = () => Date.now(), random = Math.random } = {}) {
     this.codeGenerator = codeGenerator;
-    this.words = words;
+    this.words = normalizeWordPool(words);
     this.now = now;
+    this.random = random;
     this.rooms = new Map();
   }
 
@@ -38,6 +145,8 @@ export class RoomManager {
       status: 'waiting',
       currentTurn: null,
       lastReveal: null,
+      lastWord: null,
+      wordDeck: [],
       turnIndex: 0,
       round: 0,
       wordIndex: 0
@@ -229,7 +338,7 @@ export class RoomManager {
     room.status = 'playing';
     room.lastReveal = null;
     const drawer = room.players[turnIndex];
-    const word = this.words[room.wordIndex % this.words.length];
+    const word = this.drawWord(room);
     const startedAt = this.now();
     room.wordIndex += 1;
     room.currentTurn = {
@@ -241,6 +350,30 @@ export class RoomManager {
       endsAt: startedAt + TURN_DURATION_SECONDS * 1000,
       solvedBy: null
     };
+  }
+
+  drawWord(room) {
+    if (!Array.isArray(room.wordDeck) || room.wordDeck.length === 0) {
+      room.wordDeck = this.shuffleWords(room.lastWord);
+    }
+
+    const word = room.wordDeck.shift();
+    room.lastWord = word;
+    return word;
+  }
+
+  shuffleWords(previousWord) {
+    const shuffled = [...this.words];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(this.random() * (index + 1));
+      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+    }
+
+    if (shuffled.length > 1 && shuffled[0] === previousWord) {
+      [shuffled[0], shuffled[1]] = [shuffled[1], shuffled[0]];
+    }
+
+    return shuffled;
   }
 
   snapshot(room, viewerSocketId) {
@@ -323,6 +456,20 @@ function createPlayer({ socketId, name, isHost }) {
     score: 0,
     isHost
   };
+}
+
+function normalizeWordPool(words) {
+  const normalized = [...new Set(
+    words
+      .map((word) => String(word ?? '').trim())
+      .filter(Boolean)
+  )];
+
+  if (normalized.length === 0) {
+    throw new Error('At least one word is required');
+  }
+
+  return normalized;
 }
 
 function normalizeStroke(stroke) {
