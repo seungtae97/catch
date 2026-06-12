@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RoomManager, MAX_PLAYERS, EXPANSION_MAX_PLAYERS, TURN_DURATION_SECONDS, DEFAULT_WORDS } from '../src/game/roomManager.js';
+import {
+  RoomManager,
+  MAX_PLAYERS,
+  EXPANSION_MAX_PLAYERS,
+  MAX_ROUNDS,
+  TURN_DURATION_SECONDS,
+  DEFAULT_WORDS
+} from '../src/game/roomManager.js';
 
 test('creates a room with a host player and scalable player caps', () => {
   const rooms = new RoomManager({ codeGenerator: () => 'ABCD' });
@@ -9,6 +16,7 @@ test('creates a room with a host player and scalable player caps', () => {
 
   assert.equal(MAX_PLAYERS, 4);
   assert.equal(EXPANSION_MAX_PLAYERS, 8);
+  assert.equal(MAX_ROUNDS, 10);
   assert.equal(snapshot.code, 'ABCD');
   assert.equal(snapshot.players.length, 1);
   assert.equal(snapshot.players[0].name, 'Mina');
@@ -18,11 +26,37 @@ test('creates a room with a host player and scalable player caps', () => {
 test('ships with a diverse built-in word pool', () => {
   const uniqueWords = new Set(DEFAULT_WORDS);
 
-  assert.ok(DEFAULT_WORDS.length >= 80);
+  assert.ok(DEFAULT_WORDS.length >= 2000);
   assert.equal(uniqueWords.size, DEFAULT_WORDS.length);
   assert.ok(DEFAULT_WORDS.includes('타임머신'));
   assert.ok(DEFAULT_WORDS.includes('번개'));
   assert.ok(DEFAULT_WORDS.includes('치킨'));
+});
+
+test('finishes the game after ten complete rounds', () => {
+  const rooms = new RoomManager({
+    codeGenerator: () => 'DONE',
+    words: ['alpha', 'bravo', 'charlie', 'delta'],
+    random: () => 0
+  });
+  rooms.createRoom({ socketId: 'host', name: 'Host' });
+  rooms.joinRoom({ code: 'DONE', socketId: 'guest', name: 'Guest' });
+
+  rooms.startGame({ code: 'DONE', socketId: 'host', viewerSocketId: 'host' });
+  for (let turn = 1; turn < MAX_ROUNDS * 2; turn += 1) {
+    rooms.nextTurn({ code: 'DONE', socketId: 'host', viewerSocketId: 'host' });
+  }
+
+  const finalTurn = rooms.rooms.get('DONE').currentTurn;
+  assert.equal(finalTurn.drawerSocketId, 'guest');
+  assert.equal(rooms.rooms.get('DONE').round, 10);
+
+  const finished = rooms.nextTurn({ code: 'DONE', socketId: 'host', viewerSocketId: 'host' });
+
+  assert.equal(finished.status, 'finished');
+  assert.equal(finished.round, 10);
+  assert.equal(finished.maxRounds, 10);
+  assert.equal(finished.currentTurn, null);
 });
 
 test('draws words from a shuffled deck without repeats until the deck is exhausted', () => {

@@ -217,9 +217,14 @@ function renderState() {
   gameView.classList.remove('hidden');
   roomCode.textContent = state.code;
   playerCount.textContent = `${state.players.length}/${state.maxPlayers}`;
-  roundText.textContent = state.status === 'waiting' ? '대기 중' : `${state.round}라운드`;
+  roundText.textContent = state.status === 'waiting'
+    ? '대기 중'
+    : `${state.round}/${state.maxRounds ?? 10}라운드`;
 
-  if (!state.currentTurn) {
+  if (state.status === 'finished') {
+    wordText.textContent = '게임 종료! 최종 점수를 확인하세요';
+    timerText.textContent = '--초';
+  } else if (!state.currentTurn) {
     wordText.textContent = '방장이 게임을 시작하세요';
     timerText.textContent = '--초';
   } else if (state.viewer.isDrawer) {
@@ -237,7 +242,9 @@ function renderState() {
   nextTurnBtn.disabled = !state.currentTurn || (!state.viewer.isDrawer && !state.viewer.isHost);
   clearBtn.disabled = !canDraw();
   drawLock.textContent = canDraw() ? '지금 그릴 차례입니다' : '그리는 차례가 아닙니다';
-  chatInput.placeholder = state.viewer.isDrawer ? '그리는 사람은 채팅만 가능' : '정답 또는 채팅 입력';
+  chatInput.placeholder = state.status === 'finished'
+    ? '게임이 종료되었습니다'
+    : state.viewer.isDrawer ? '그리는 사람은 채팅만 가능' : '정답 또는 채팅 입력';
 
   renderPlayers();
   renderMessages();

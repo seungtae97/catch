@@ -1,10 +1,14 @@
+import { randomInt } from 'node:crypto';
+import { createGeneratedWords } from './wordPool.js';
+
 export const MAX_PLAYERS = 4;
 export const EXPANSION_MAX_PLAYERS = 8;
+export const MAX_ROUNDS = 10;
 export const TURN_DURATION_SECONDS = 60;
 export const GUESSER_POINTS = 10;
 export const DRAWER_POINTS = 5;
 
-export const DEFAULT_WORDS = Object.freeze([
+const LEGACY_WORDS = Object.freeze([
   '사과',
   '바다',
   '학교',
@@ -125,8 +129,13 @@ export const DEFAULT_WORDS = Object.freeze([
   '별똥별'
 ]);
 
+export const DEFAULT_WORDS = Object.freeze([...new Set([
+  ...LEGACY_WORDS,
+  ...createGeneratedWords()
+])]);
+
 export class RoomManager {
-  constructor({ codeGenerator = makeRoomCode, words = DEFAULT_WORDS, now = () => Date.now(), random = Math.random } = {}) {
+  constructor({ codeGenerator = makeRoomCode, words = DEFAULT_WORDS, now = () => Date.now(), random = secureRandom } = {}) {
     this.codeGenerator = codeGenerator;
     this.words = normalizeWordPool(words);
     this.now = now;
@@ -204,6 +213,10 @@ export class RoomManager {
 
     const nextIndex = (room.turnIndex + 1) % room.players.length;
     if (nextIndex === 0) {
+      if (room.round >= MAX_ROUNDS) {
+        this.finishGame(room);
+        return this.snapshot(room, viewerSocketId);
+      }
       room.round += 1;
     }
     this.beginTurn(room, nextIndex);
@@ -361,6 +374,12 @@ export class RoomManager {
     };
   }
 
+  finishGame(room) {
+    room.status = 'finished';
+    room.currentTurn = null;
+    room.strokes = [];
+  }
+
   drawWord(room) {
     if (!Array.isArray(room.wordDeck) || room.wordDeck.length === 0) {
       room.wordDeck = this.shuffleWords(room.lastWord);
@@ -391,6 +410,7 @@ export class RoomManager {
       code: room.code,
       maxPlayers: MAX_PLAYERS,
       expansionMaxPlayers: EXPANSION_MAX_PLAYERS,
+      maxRounds: MAX_ROUNDS,
       status: room.status,
       round: room.round,
       players: room.players.map((player) => ({ ...player })),
@@ -504,6 +524,10 @@ function normalizeStroke(stroke) {
       y: Number(point.y)
     })).filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
   };
+}
+
+function secureRandom() {
+  return randomInt(0, 1_000_000_000) / 1_000_000_000;
 }
 
 function makeRoomCode() {
