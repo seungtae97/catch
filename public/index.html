@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>캐치마인드</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app">
+      <section id="entryView" class="entry-view">
+        <div class="entry-panel">
+          <p class="eyebrow">Realtime Drawing Game</p>
+          <h1>캐치마인드</h1>
+          <form id="entryForm" class="entry-form">
+            <label>
+              닉네임
+              <input id="nameInput" maxlength="16" autocomplete="nickname" placeholder="예: 민수" required>
+            </label>
+            <label>
+              방 코드
+              <input id="roomInput" maxlength="4" autocomplete="off" placeholder="참가할 때 입력">
+            </label>
+            <div class="entry-actions">
+              <button type="button" id="createRoomBtn">방 만들기</button>
+              <button type="submit" class="secondary">방 참가</button>
+            </div>
+          </form>
+          <p id="entryError" class="error" role="alert"></p>
+        </div>
+      </section>
+
+      <section id="gameView" class="game-view hidden">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Room</p>
+            <h2 id="roomCode">----</h2>
+          </div>
+          <div class="turn-status">
+            <span id="roundText">대기 중</span>
+            <strong id="wordText">게임 시작 전</strong>
+          </div>
+          <div class="topbar-actions">
+            <button id="startBtn" type="button">시작</button>
+            <button id="nextTurnBtn" type="button" class="secondary">넘기기</button>
+          </div>
+        </header>
+
+        <div class="game-layout">
+          <aside class="side-panel">
+            <div class="panel-heading">
+              <h3>플레이어</h3>
+              <span id="playerCount">0/4</span>
+            </div>
+            <ul id="playerList" class="player-list"></ul>
+          </aside>
+
+          <section class="canvas-section">
+            <canvas id="drawingCanvas" width="1200" height="780"></canvas>
+            <div class="tool-row">
+              <label class="tool">
+                색
+                <input id="colorInput" type="color" value="#111111">
+              </label>
+              <label class="tool">
+                굵기
+                <input id="sizeInput" type="range" min="2" max="24" value="7">
+              </label>
+              <button id="clearBtn" type="button" class="secondary">지우기</button>
+              <span id="drawLock">그리는 차례가 아닙니다</span>
+            </div>
+          </section>
+
+          <aside class="chat-panel">
+            <div class="panel-heading">
+              <h3>채팅</h3>
+              <span id="socketStatus">연결 중</span>
+            </div>
+            <div id="messages" class="messages"></div>
+            <form id="chatForm" class="chat-form">
+              <input id="chatInput" autocomplete="off" placeholder="정답 또는 채팅 입력">
+              <button type="submit">전송</button>
+            </form>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/client.js" type="module"></script>
+  </body>
+</html>
