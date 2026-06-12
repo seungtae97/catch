@@ -69,9 +69,21 @@ export function createServerApp() {
       turnTimers.set(roomCode, timer);
     };
 
-    socket.on('room:create', ({ name }, reply) => {
+    const attachSocketToRoom = ({ code, name, playerId }) => {
+      const snapshot = roomManager.joinRoom({
+        code: String(code ?? '').trim().toUpperCase(),
+        socketId: socket.id,
+        name,
+        playerId
+      });
+      socket.join(snapshot.code);
+      socketRooms.set(socket.id, snapshot.code);
+      return snapshot;
+    };
+
+    socket.on('room:create', ({ name, playerId }, reply) => {
       try {
-        const snapshot = roomManager.createRoom({ socketId: socket.id, name });
+        const snapshot = roomManager.createRoom({ socketId: socket.id, name, playerId });
         socket.join(snapshot.code);
         socketRooms.set(socket.id, snapshot.code);
         reply?.({ ok: true, snapshot });
@@ -82,12 +94,9 @@ export function createServerApp() {
       }
     });
 
-    socket.on('room:join', ({ code, name }, reply) => {
+    socket.on('room:join', ({ code, name, playerId }, reply) => {
       try {
-        const normalizedCode = String(code ?? '').trim().toUpperCase();
-        const snapshot = roomManager.joinRoom({ code: normalizedCode, socketId: socket.id, name });
-        socket.join(snapshot.code);
-        socketRooms.set(socket.id, snapshot.code);
+        const snapshot = attachSocketToRoom({ code, name, playerId });
         reply?.({ ok: true, snapshot });
         emitRoom(snapshot.code);
       } catch (error) {
@@ -130,9 +139,13 @@ export function createServerApp() {
       }
     });
 
-    socket.on('chat:send', ({ message }, reply) => {
+    socket.on('chat:send', ({ message, code: payloadCode, name, playerId }, reply) => {
       try {
-        const code = socketRooms.get(socket.id);
+        let code = socketRooms.get(socket.id);
+        if (!code && payloadCode) {
+          const snapshot = attachSocketToRoom({ code: payloadCode, name, playerId });
+          code = snapshot.code;
+        }
         const result = roomManager.submitChat({ code, socketId: socket.id, message });
         reply?.({ ok: true, correct: result.correct });
         io.to(code).emit('chat:message', result.chat);

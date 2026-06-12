@@ -1,4 +1,5 @@
 const socket = io();
+const PLAYER_ID_KEY = 'catchmind:player-id';
 
 const entryView = document.querySelector('#entryView');
 const gameView = document.querySelector('#gameView');
@@ -35,6 +36,8 @@ let drawing = false;
 let currentStroke = null;
 let localTurnDeadline = null;
 let activeTurnKey = null;
+let currentSession = null;
+const playerId = getOrCreatePlayerId();
 
 ctx.lineCap = 'round';
 ctx.lineJoin = 'round';
@@ -43,6 +46,7 @@ setInterval(updateTimerText, 250);
 
 socket.on('connect', () => {
   socketStatus.textContent = '연결됨';
+  rejoinCurrentRoom();
 });
 
 socket.on('disconnect', () => {
@@ -72,14 +76,14 @@ socket.on('chat:message', (message) => {
 
 createRoomBtn.addEventListener('click', () => {
   const name = nameInput.value.trim();
-  requestRoom('room:create', { name });
+  requestRoom('room:create', { name, playerId });
 });
 
 entryForm.addEventListener('submit', (event) => {
   event.preventDefault();
   const name = nameInput.value.trim();
   const code = roomInput.value.trim().toUpperCase();
-  requestRoom('room:join', { name, code });
+  requestRoom('room:join', { name, code, playerId });
 });
 
 startBtn.addEventListener('click', () => {
@@ -102,7 +106,12 @@ chatForm.addEventListener('submit', (event) => {
   if (!message) {
     return;
   }
-  socket.emit('chat:send', { message }, handleReply);
+  socket.emit('chat:send', {
+    message,
+    code: currentSession?.code ?? state?.code,
+    name: currentSession?.name,
+    playerId
+  }, handleReply);
   chatInput.value = '';
 });
 
@@ -140,8 +149,31 @@ function requestRoom(eventName, payload) {
       return;
     }
     state = reply.snapshot;
+    currentSession = {
+      code: reply.snapshot.code,
+      name: payload.name
+    };
     entryView.classList.add('hidden');
     gameView.classList.remove('hidden');
+    renderState();
+  });
+}
+
+function rejoinCurrentRoom() {
+  if (!currentSession?.code || !currentSession.name || !state) {
+    return;
+  }
+
+  socket.emit('room:join', {
+    code: currentSession.code,
+    name: currentSession.name,
+    playerId
+  }, (reply) => {
+    if (!reply?.ok) {
+      showError(reply?.message ?? '재연결에 실패했습니다');
+      return;
+    }
+    state = reply.snapshot;
     renderState();
   });
 }
@@ -153,7 +185,15 @@ function handleReply(reply) {
 }
 
 function showError(message) {
-  entryError.textContent = koreanError(message);
+  const text = koreanError(message);
+  entryError.textContent = text;
+  if (!gameView.classList.contains('hidden')) {
+    appendMessage({
+      playerName: '시스템',
+      message: text,
+      correct: false
+    });
+  }
 }
 
 function koreanError(message) {
@@ -359,4 +399,25 @@ function drawSegment(from, to, stroke) {
   ctx.moveTo(from.x, from.y);
   ctx.lineTo(to.x, to.y);
   ctx.stroke();
+}
+
+function getOrCreatePlayerId() {
+  try {
+    const existing = localStorage.getItem(PLAYER_ID_KEY);
+    if (existing) {
+      return existing;
+    }
+    const next = createPlayerId();
+    localStorage.setItem(PLAYER_ID_KEY, next);
+    return next;
+  } catch {
+    return createPlayerId();
+  }
+}
+
+function createPlayerId() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+  return `player-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }

@@ -98,7 +98,8 @@ test('scores a correct guess and advances to the next drawer', () => {
   const rooms = new RoomManager({
     codeGenerator: () => 'TURN',
     words: ['사과', '바다'],
-    now: () => 5000
+    now: () => 5000,
+    random: () => 0.99
   });
   rooms.createRoom({ socketId: 'drawer', name: 'Drawer' });
   rooms.joinRoom({ code: 'TURN', socketId: 'guesser', name: 'Guesser' });

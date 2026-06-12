@@ -134,8 +134,8 @@ export class RoomManager {
     this.rooms = new Map();
   }
 
-  createRoom({ socketId, name }) {
-    const player = createPlayer({ socketId, name, isHost: true });
+  createRoom({ socketId, name, playerId }) {
+    const player = createPlayer({ socketId, name, playerId, isHost: true });
     const code = this.createUniqueCode();
     const room = {
       code,
@@ -156,8 +156,17 @@ export class RoomManager {
     return this.snapshot(room, socketId);
   }
 
-  joinRoom({ code, socketId, name }) {
+  joinRoom({ code, socketId, name, playerId }) {
     const room = this.getRoom(code);
+    const normalizedPlayerId = normalizePlayerId(playerId, socketId);
+    const existingPlayer = room.players.find((player) => player.id === normalizedPlayerId);
+    if (existingPlayer) {
+      existingPlayer.socketId = socketId;
+      if (String(name ?? '').trim()) {
+        existingPlayer.name = normalizeName(name);
+      }
+      return this.snapshot(room, socketId);
+    }
     if (room.players.some((player) => player.socketId === socketId)) {
       return this.snapshot(room, socketId);
     }
@@ -165,7 +174,7 @@ export class RoomManager {
       throw new Error('Room is full');
     }
 
-    room.players.push(createPlayer({ socketId, name, isHost: false }));
+    room.players.push(createPlayer({ socketId, name, playerId: normalizedPlayerId, isHost: false }));
     return this.snapshot(room, socketId);
   }
 
@@ -444,18 +453,28 @@ export class RoomManager {
   }
 }
 
-function createPlayer({ socketId, name, isHost }) {
+function createPlayer({ socketId, name, playerId, isHost }) {
+  return {
+    id: normalizePlayerId(playerId, socketId),
+    socketId,
+    name: normalizeName(name),
+    score: 0,
+    isHost
+  };
+}
+
+function normalizePlayerId(playerId, socketId) {
+  const id = String(playerId ?? '').trim();
+  return id || socketId;
+}
+
+function normalizeName(name) {
   const trimmedName = String(name ?? '').trim();
   if (!trimmedName) {
     throw new Error('Name is required');
   }
 
-  return {
-    socketId,
-    name: trimmedName.slice(0, 16),
-    score: 0,
-    isHost
-  };
+  return trimmedName.slice(0, 16);
 }
 
 function normalizeWordPool(words) {
