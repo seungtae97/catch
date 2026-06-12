@@ -39,6 +39,7 @@
           <div class="turn-status">
             <span id="roundText">대기 중</span>
             <strong id="wordText">게임 시작 전</strong>
+            <span id="timerText" class="timer-text">--초</span>
           </div>
           <div class="topbar-actions">
             <button id="startBtn" type="button">시작</button>
@@ -56,7 +57,14 @@
           </aside>
 
           <section class="canvas-section">
-            <canvas id="drawingCanvas" width="1200" height="780"></canvas>
+            <div class="canvas-wrap">
+              <canvas id="drawingCanvas" width="1200" height="780"></canvas>
+              <div id="turnNotice" class="turn-notice hidden">내 차례입니다</div>
+              <div id="resultOverlay" class="result-overlay hidden" aria-live="polite">
+                <strong id="resultTitle"></strong>
+                <span id="resultDetail"></span>
+              </div>
+            </div>
             <div class="tool-row">
               <label class="tool">
                 색

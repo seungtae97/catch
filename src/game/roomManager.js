@@ -1,5 +1,8 @@
 export const MAX_PLAYERS = 4;
 export const EXPANSION_MAX_PLAYERS = 8;
+export const TURN_DURATION_SECONDS = 60;
+export const GUESSER_POINTS = 10;
+export const DRAWER_POINTS = 5;
 
 const DEFAULT_WORDS = [
   '사과',
@@ -17,9 +20,10 @@ const DEFAULT_WORDS = [
 ];
 
 export class RoomManager {
-  constructor({ codeGenerator = makeRoomCode, words = DEFAULT_WORDS } = {}) {
+  constructor({ codeGenerator = makeRoomCode, words = DEFAULT_WORDS, now = () => Date.now() } = {}) {
     this.codeGenerator = codeGenerator;
     this.words = words;
+    this.now = now;
     this.rooms = new Map();
   }
 
@@ -33,6 +37,7 @@ export class RoomManager {
       strokes: [],
       status: 'waiting',
       currentTurn: null,
+      lastReveal: null,
       turnIndex: 0,
       round: 0,
       wordIndex: 0
@@ -87,6 +92,32 @@ export class RoomManager {
     return this.snapshot(room, viewerSocketId);
   }
 
+  expireTurn({ code }) {
+    const room = this.getRoom(code);
+    if (room.status !== 'playing' || !room.currentTurn) {
+      return { expired: false, snapshot: this.snapshot(room, room.players[0]?.socketId) };
+    }
+    if (this.remainingSeconds(room) > 0) {
+      return { expired: false, snapshot: this.snapshot(room, room.players[0]?.socketId) };
+    }
+
+    room.status = 'turn-ended';
+    room.currentTurn.solvedBy = null;
+    room.lastReveal = {
+      word: room.currentTurn.word,
+      guesserName: null,
+      guesserScore: 0,
+      drawerName: room.currentTurn.drawerName,
+      drawerScore: 0
+    };
+
+    return {
+      expired: true,
+      reveal: room.lastReveal,
+      snapshot: this.snapshot(room, room.players[0]?.socketId)
+    };
+  }
+
   getSnapshotForSocket({ code, viewerSocketId }) {
     return this.snapshot(this.getRoom(code), viewerSocketId);
   }
@@ -114,6 +145,10 @@ export class RoomManager {
       throw new Error('Message is required');
     }
 
+    if (room.status === 'playing' && room.currentTurn && this.remainingSeconds(room) <= 0) {
+      this.expireTurn({ code: room.code });
+    }
+
     const correct = room.status === 'playing'
       && room.currentTurn
       && socketId !== room.currentTurn.drawerSocketId
@@ -130,16 +165,24 @@ export class RoomManager {
 
     room.messages.push(chat);
     if (correct) {
-      player.score += 10;
+      player.score += GUESSER_POINTS;
       const drawer = this.getPlayer(room, room.currentTurn.drawerSocketId);
-      drawer.score += 5;
+      drawer.score += DRAWER_POINTS;
       room.status = 'turn-ended';
       room.currentTurn.solvedBy = socketId;
+      room.lastReveal = {
+        word: room.currentTurn.word,
+        guesserName: player.name,
+        guesserScore: GUESSER_POINTS,
+        drawerName: drawer.name,
+        drawerScore: DRAWER_POINTS
+      };
     }
 
     return {
       correct,
       chat,
+      reveal: correct ? room.lastReveal : null,
       snapshot: this.snapshot(room, socketId)
     };
   }
@@ -184,14 +227,18 @@ export class RoomManager {
     room.turnIndex = turnIndex;
     room.strokes = [];
     room.status = 'playing';
+    room.lastReveal = null;
     const drawer = room.players[turnIndex];
     const word = this.words[room.wordIndex % this.words.length];
+    const startedAt = this.now();
     room.wordIndex += 1;
     room.currentTurn = {
       drawerSocketId: drawer.socketId,
       drawerName: drawer.name,
       word,
       hint: `${[...word].length}글자`,
+      startedAt,
+      endsAt: startedAt + TURN_DURATION_SECONDS * 1000,
       solvedBy: null
     };
   }
@@ -207,12 +254,16 @@ export class RoomManager {
       players: room.players.map((player) => ({ ...player })),
       messages: room.messages.slice(-60),
       strokes: room.strokes,
+      lastReveal: room.lastReveal ? { ...room.lastReveal } : null,
       currentTurn: room.currentTurn
         ? {
             drawerSocketId: room.currentTurn.drawerSocketId,
             drawerName: room.currentTurn.drawerName,
             word: isDrawer ? room.currentTurn.word : null,
             hint: room.currentTurn.hint,
+            startedAt: room.currentTurn.startedAt,
+            endsAt: room.currentTurn.endsAt,
+            remainingSeconds: this.remainingSeconds(room),
             solvedBy: room.currentTurn.solvedBy
           }
         : null,
@@ -250,6 +301,13 @@ export class RoomManager {
     if (room.status !== 'playing' || room.currentTurn?.drawerSocketId !== socketId) {
       throw new Error('Only the drawer can draw');
     }
+  }
+
+  remainingSeconds(room) {
+    if (!room.currentTurn?.endsAt) {
+      return 0;
+    }
+    return Math.max(0, Math.ceil((room.currentTurn.endsAt - this.now()) / 1000));
   }
 }
 

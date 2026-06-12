@@ -15,6 +15,7 @@ export function createServerApp() {
   const io = new Server(httpServer);
   const roomManager = new RoomManager();
   const socketRooms = new Map();
+  const turnTimers = new Map();
 
   expressApp.get('/healthz', (_request, response) => {
     response.status(200).json({ ok: true, service: 'catchmind-web' });
@@ -38,6 +39,34 @@ export function createServerApp() {
           viewerSocketId: player.socketId
         }));
       }
+    };
+
+    const clearTurnTimer = (code) => {
+      const roomCode = String(code ?? '').toUpperCase();
+      const timer = turnTimers.get(roomCode);
+      if (timer) {
+        clearTimeout(timer);
+        turnTimers.delete(roomCode);
+      }
+    };
+
+    const scheduleTurnTimer = (code) => {
+      const roomCode = String(code ?? '').toUpperCase();
+      const room = roomManager.rooms.get(roomCode);
+      clearTurnTimer(roomCode);
+      if (!room?.currentTurn || room.status !== 'playing') {
+        return;
+      }
+
+      const delay = Math.max(0, room.currentTurn.endsAt - Date.now());
+      const timer = setTimeout(() => {
+        const result = roomManager.expireTurn({ code: roomCode });
+        turnTimers.delete(roomCode);
+        if (result.expired) {
+          emitRoom(roomCode);
+        }
+      }, delay);
+      turnTimers.set(roomCode, timer);
     };
 
     socket.on('room:create', ({ name }, reply) => {
@@ -72,6 +101,7 @@ export function createServerApp() {
         const code = socketRooms.get(socket.id);
         const snapshot = roomManager.startGame({ code, socketId: socket.id, viewerSocketId: socket.id });
         reply?.({ ok: true, snapshot });
+        scheduleTurnTimer(code);
         emitRoom(code);
       } catch (error) {
         reply?.({ ok: false, message: error.message });
@@ -106,6 +136,9 @@ export function createServerApp() {
         const result = roomManager.submitChat({ code, socketId: socket.id, message });
         reply?.({ ok: true, correct: result.correct });
         io.to(code).emit('chat:message', result.chat);
+        if (result.correct) {
+          clearTurnTimer(code);
+        }
         emitRoom(code);
       } catch (error) {
         reply?.({ ok: false, message: error.message });
@@ -119,6 +152,7 @@ export function createServerApp() {
         const snapshot = roomManager.nextTurn({ code, socketId: socket.id, viewerSocketId: socket.id });
         io.to(code).emit('draw:clear');
         reply?.({ ok: true, snapshot });
+        scheduleTurnTimer(code);
         emitRoom(code);
       } catch (error) {
         reply?.({ ok: false, message: error.message });
@@ -131,7 +165,10 @@ export function createServerApp() {
       const code = socketRooms.get(socket.id) ?? removed?.code;
       socketRooms.delete(socket.id);
       if (code && !removed?.deleted) {
+        scheduleTurnTimer(code);
         emitRoom(code);
+      } else if (code) {
+        clearTurnTimer(code);
       }
     });
   });

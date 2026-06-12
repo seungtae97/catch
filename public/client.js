@@ -10,6 +10,7 @@ const entryError = document.querySelector('#entryError');
 const roomCode = document.querySelector('#roomCode');
 const roundText = document.querySelector('#roundText');
 const wordText = document.querySelector('#wordText');
+const timerText = document.querySelector('#timerText');
 const startBtn = document.querySelector('#startBtn');
 const nextTurnBtn = document.querySelector('#nextTurnBtn');
 const playerCount = document.querySelector('#playerCount');
@@ -20,6 +21,10 @@ const colorInput = document.querySelector('#colorInput');
 const sizeInput = document.querySelector('#sizeInput');
 const clearBtn = document.querySelector('#clearBtn');
 const drawLock = document.querySelector('#drawLock');
+const turnNotice = document.querySelector('#turnNotice');
+const resultOverlay = document.querySelector('#resultOverlay');
+const resultTitle = document.querySelector('#resultTitle');
+const resultDetail = document.querySelector('#resultDetail');
 const messages = document.querySelector('#messages');
 const chatForm = document.querySelector('#chatForm');
 const chatInput = document.querySelector('#chatInput');
@@ -28,9 +33,13 @@ const ctx = canvas.getContext('2d');
 let state = null;
 let drawing = false;
 let currentStroke = null;
+let localTurnDeadline = null;
+let activeTurnKey = null;
 
 ctx.lineCap = 'round';
 ctx.lineJoin = 'round';
+
+setInterval(updateTimerText, 250);
 
 socket.on('connect', () => {
   socketStatus.textContent = '연결됨';
@@ -172,13 +181,17 @@ function renderState() {
 
   if (!state.currentTurn) {
     wordText.textContent = '방장이 게임을 시작하세요';
+    timerText.textContent = '--초';
   } else if (state.viewer.isDrawer) {
-    wordText.textContent = `제시어: ${state.currentTurn.word}`;
+    wordText.textContent = `내 차례입니다! 제시어: ${state.currentTurn.word}`;
   } else if (state.status === 'turn-ended') {
     wordText.textContent = `정답 완료: ${state.currentTurn.drawerName}의 차례`;
   } else {
     wordText.textContent = `${state.currentTurn.drawerName} 그림 | 힌트 ${state.currentTurn.hint}`;
   }
+
+  syncTurnDeadline();
+  updateTimerText();
 
   startBtn.disabled = !state.viewer.isHost || state.status !== 'waiting' || state.players.length < 2;
   nextTurnBtn.disabled = !state.currentTurn || (!state.viewer.isDrawer && !state.viewer.isHost);
@@ -188,7 +201,68 @@ function renderState() {
 
   renderPlayers();
   renderMessages();
+  renderTurnNotice();
+  renderReveal();
   redrawCanvas();
+}
+
+function syncTurnDeadline() {
+  if (!state?.currentTurn || state.status !== 'playing') {
+    activeTurnKey = null;
+    localTurnDeadline = null;
+    return;
+  }
+
+  const turnKey = `${state.currentTurn.drawerSocketId}-${state.currentTurn.endsAt}`;
+  if (turnKey !== activeTurnKey) {
+    activeTurnKey = turnKey;
+    localTurnDeadline = Date.now() + (state.currentTurn.remainingSeconds ?? 0) * 1000;
+  }
+}
+
+function updateTimerText() {
+  if (!timerText) {
+    return;
+  }
+  if (!state?.currentTurn) {
+    timerText.textContent = '--초';
+    return;
+  }
+
+  const remaining = state.status === 'playing' && localTurnDeadline
+    ? Math.max(0, Math.ceil((localTurnDeadline - Date.now()) / 1000))
+    : Math.max(0, state.currentTurn.remainingSeconds ?? 0);
+  timerText.textContent = `${remaining}초`;
+}
+
+function renderTurnNotice() {
+  if (!turnNotice) {
+    return;
+  }
+  turnNotice.classList.toggle('hidden', !canDraw());
+  turnNotice.textContent = '내 차례입니다';
+}
+
+function renderReveal() {
+  if (!resultOverlay || !resultTitle || !resultDetail) {
+    return;
+  }
+  const reveal = state?.lastReveal;
+  if (!reveal) {
+    resultOverlay.classList.add('hidden');
+    resultTitle.textContent = '';
+    resultDetail.textContent = '';
+    return;
+  }
+
+  resultOverlay.classList.remove('hidden');
+  if (reveal.guesserName) {
+    resultTitle.textContent = `정답: ${reveal.word}`;
+    resultDetail.textContent = `${reveal.guesserName} +${reveal.guesserScore}점, ${reveal.drawerName} +${reveal.drawerScore}점`;
+  } else {
+    resultTitle.textContent = `시간 종료! 정답: ${reveal.word}`;
+    resultDetail.textContent = '이번 차례는 점수 없이 종료됐습니다';
+  }
 }
 
 function renderPlayers() {

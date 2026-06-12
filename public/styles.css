@@ -175,6 +175,11 @@ h1 {
   font-weight: 700;
 }
 
+.timer-text {
+  color: var(--accent-strong) !important;
+  font-weight: 900 !important;
+}
+
 .turn-status strong {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -298,16 +303,67 @@ h1 {
   gap: 10px;
 }
 
+.canvas-wrap {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
 canvas {
   display: block;
   width: 100%;
   height: 100%;
   min-height: 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
   background: white;
   touch-action: none;
   cursor: crosshair;
+}
+
+.turn-notice,
+.result-overlay {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.turn-notice {
+  top: 12px;
+  left: 12px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.94);
+  color: white;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.result-overlay {
+  left: 50%;
+  top: 50%;
+  display: grid;
+  gap: 8px;
+  width: min(420px, calc(100% - 28px));
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(17, 94, 89, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 18px 48px rgba(25, 36, 50, 0.18);
+  color: var(--ink);
+  padding: 18px;
+  text-align: center;
+}
+
+.result-overlay strong {
+  font-size: 24px;
+}
+
+.result-overlay span {
+  color: var(--muted);
+  font-weight: 800;
 }
 
 .tool-row {
@@ -471,6 +527,14 @@ canvas {
     gap: 4px;
     min-width: 0;
     font-size: 11px;
+  }
+
+  .result-overlay {
+    padding: 14px;
+  }
+
+  .result-overlay strong {
+    font-size: 20px;
   }
 
   #drawLock {
