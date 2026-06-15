@@ -12,7 +12,10 @@ const publicDir = path.resolve(__dirname, '..', 'public');
 export function createServerApp() {
   const expressApp = express();
   const httpServer = http.createServer(expressApp);
-  const io = new Server(httpServer);
+  // 다른 사이트의 iframe에서 임베드해도 소켓이 연결되도록 교차 출처를 허용한다.
+  const io = new Server(httpServer, {
+    cors: { origin: true, credentials: true }
+  });
   const roomManager = new RoomManager();
   const socketRooms = new Map();
   const turnTimers = new Map();

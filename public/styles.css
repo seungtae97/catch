@@ -558,8 +558,8 @@ canvas.locked {
 
 /* ---------- 그리기 도구 ---------- */
 .tool-row {
-  display: grid;
-  grid-template-columns: auto auto auto 1fr;
+  display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   align-items: center;
   border: var(--border-width) solid var(--line);
@@ -650,13 +650,14 @@ canvas.locked {
 }
 
 #drawLock {
+  margin-left: auto;
   align-self: center;
-  justify-self: end;
   color: var(--muted);
   font-family: var(--font-display);
   font-size: 14px;
   font-weight: 700;
   text-align: right;
+  white-space: nowrap;
 }
 
 /* ---------- 채팅 ---------- */
@@ -801,16 +802,6 @@ canvas.locked {
   .topbar-actions button {
     min-width: 76px;
   }
-
-  .tool-row {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  #drawLock {
-    grid-column: 1 / -1;
-    justify-self: start;
-    text-align: left;
-  }
 }
 
 @media (max-width: 560px) {
@@ -842,7 +833,6 @@ canvas.locked {
   }
 
   .tool-row {
-    grid-template-columns: 1fr;
     gap: 10px;
   }
 

@@ -1,4 +1,6 @@
-const socket = io();
+// WebSocket을 우선 사용한다. 다른 사이트의 iframe(서드파티 컨텍스트)에서는
+// 기본 HTTP 폴링 전송이 차단/분리될 수 있어 채팅 같은 서버 왕복이 끊긴다.
+const socket = io({ transports: ['websocket', 'polling'] });
 const PLAYER_ID_KEY = 'catchmind:player-id';
 
 const entryView = document.querySelector('#entryView');
