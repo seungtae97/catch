@@ -4,6 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>캐치마인드</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Jua&family=Baloo+2:wght@500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
@@ -32,7 +35,7 @@
 
       <section id="gameView" class="game-view hidden">
         <header class="topbar">
-          <div>
+          <div class="room-info">
             <p class="eyebrow">Room</p>
             <h2 id="roomCode">----</h2>
           </div>
@@ -64,16 +67,17 @@
                 <strong id="resultTitle"></strong>
                 <span id="resultDetail"></span>
               </div>
+              <div id="confetti" class="confetti" aria-hidden="true"></div>
             </div>
             <div class="tool-row">
-              <label class="tool">
-                색
-                <input id="colorInput" type="color" value="#111111">
-              </label>
-              <label class="tool">
-                굵기
-                <input id="sizeInput" type="range" min="2" max="24" value="7">
-              </label>
+              <div class="tool">
+                <span class="tool-label">색</span>
+                <div id="colorSwatches" class="swatches" role="group" aria-label="펜 색상"></div>
+              </div>
+              <div class="tool">
+                <span class="tool-label">굵기</span>
+                <div id="sizeOptions" class="size-options" role="group" aria-label="펜 굵기"></div>
+              </div>
               <button id="clearBtn" type="button" class="secondary">지우기</button>
               <span id="drawLock">그리는 차례가 아닙니다</span>
             </div>

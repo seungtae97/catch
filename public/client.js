@@ -18,8 +18,8 @@ const playerCount = document.querySelector('#playerCount');
 const playerList = document.querySelector('#playerList');
 const socketStatus = document.querySelector('#socketStatus');
 const canvas = document.querySelector('#drawingCanvas');
-const colorInput = document.querySelector('#colorInput');
-const sizeInput = document.querySelector('#sizeInput');
+const colorSwatches = document.querySelector('#colorSwatches');
+const sizeOptions = document.querySelector('#sizeOptions');
 const clearBtn = document.querySelector('#clearBtn');
 const drawLock = document.querySelector('#drawLock');
 const turnNotice = document.querySelector('#turnNotice');
@@ -29,7 +29,25 @@ const resultDetail = document.querySelector('#resultDetail');
 const messages = document.querySelector('#messages');
 const chatForm = document.querySelector('#chatForm');
 const chatInput = document.querySelector('#chatInput');
+const confetti = document.querySelector('#confetti');
 const ctx = canvas.getContext('2d');
+
+const PEN_COLORS = [
+  { name: '흰', value: '#ffffff' },
+  { name: '검', value: '#111111' },
+  { name: '빨', value: '#e53935' },
+  { name: '주', value: '#fb8c00' },
+  { name: '노', value: '#fdd835' },
+  { name: '초', value: '#43a047' },
+  { name: '파', value: '#1e88e5' },
+  { name: '남', value: '#283593' },
+  { name: '보', value: '#8e24aa' }
+];
+const PEN_SIZES = [4, 8, 14, 20, 28];
+let selectedColor = '#111111';
+let selectedSize = 8;
+let lastRevealKey = null;
+buildPenControls();
 
 let state = null;
 let drawing = false;
@@ -72,6 +90,7 @@ socket.on('draw:clear', () => {
 
 socket.on('chat:message', (message) => {
   appendMessage(message);
+  showPlayerBubble(message);
 });
 
 createRoomBtn.addEventListener('click', () => {
@@ -122,8 +141,8 @@ canvas.addEventListener('pointerdown', (event) => {
   drawing = true;
   canvas.setPointerCapture(event.pointerId);
   currentStroke = {
-    color: colorInput.value,
-    size: Number(sizeInput.value),
+    color: selectedColor,
+    size: selectedSize,
     points: [canvasPoint(event)]
   };
 });
@@ -241,6 +260,7 @@ function renderState() {
   startBtn.disabled = !state.viewer.isHost || state.status !== 'waiting' || state.players.length < 2;
   nextTurnBtn.disabled = !state.currentTurn || (!state.viewer.isDrawer && !state.viewer.isHost);
   clearBtn.disabled = !canDraw();
+  canvas.classList.toggle('locked', !canDraw());
   drawLock.textContent = canDraw() ? '지금 그릴 차례입니다' : '그리는 차례가 아닙니다';
   chatInput.placeholder = state.status === 'finished'
     ? '게임이 종료되었습니다'
@@ -299,13 +319,21 @@ function renderReveal() {
     resultOverlay.classList.add('hidden');
     resultTitle.textContent = '';
     resultDetail.textContent = '';
+    lastRevealKey = null;
     return;
   }
+
+  const revealKey = `${reveal.word}-${reveal.guesserName ?? ''}-${reveal.drawerName ?? ''}`;
+  const isNewReveal = revealKey !== lastRevealKey;
+  lastRevealKey = revealKey;
 
   resultOverlay.classList.remove('hidden');
   if (reveal.guesserName) {
     resultTitle.textContent = `정답: ${reveal.word}`;
     resultDetail.textContent = `${reveal.guesserName} +${reveal.guesserScore}점, ${reveal.drawerName} +${reveal.drawerScore}점`;
+    if (isNewReveal) {
+      launchConfetti();
+    }
   } else {
     resultTitle.textContent = `시간 종료! 정답: ${reveal.word}`;
     resultDetail.textContent = '이번 차례는 점수 없이 종료됐습니다';
@@ -316,6 +344,7 @@ function renderPlayers() {
   playerList.innerHTML = '';
   for (const player of state.players) {
     const item = document.createElement('li');
+    item.dataset.socketId = player.socketId;
     const name = document.createElement('strong');
     const score = document.createElement('span');
     const badges = document.createElement('div');
@@ -355,8 +384,102 @@ function appendMessage(message) {
 function makeBadge(text, tone = '') {
   const badge = document.createElement('span');
   badge.className = `badge ${tone}`.trim();
-  badge.textContent = text;
+  const icon = text === '방장' ? '👑 ' : text === '그림' ? '🎨 ' : '';
+  badge.textContent = `${icon}${text}`;
   return badge;
+}
+
+function buildPenControls() {
+  for (const color of PEN_COLORS) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'swatch';
+    btn.style.background = color.value;
+    btn.title = color.name;
+    btn.setAttribute('aria-label', `${color.name}색`);
+    btn.classList.toggle('active', color.value === selectedColor);
+    btn.addEventListener('click', () => {
+      selectedColor = color.value;
+      for (const node of colorSwatches.children) {
+        node.classList.toggle('active', node === btn);
+      }
+    });
+    colorSwatches.append(btn);
+  }
+
+  const maxSize = PEN_SIZES[PEN_SIZES.length - 1];
+  for (const size of PEN_SIZES) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'size-btn';
+    btn.title = `${size}px`;
+    btn.setAttribute('aria-label', `굵기 ${size}`);
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    const diameter = Math.round(6 + (size / maxSize) * 16);
+    dot.style.width = `${diameter}px`;
+    dot.style.height = `${diameter}px`;
+    btn.append(dot);
+    btn.classList.toggle('active', size === selectedSize);
+    btn.addEventListener('click', () => {
+      selectedSize = size;
+      for (const node of sizeOptions.children) {
+        node.classList.toggle('active', node === btn);
+      }
+    });
+    sizeOptions.append(btn);
+  }
+}
+
+function showPlayerBubble(message) {
+  if (!message?.playerId || gameView.classList.contains('hidden')) {
+    return;
+  }
+  const item = playerList.querySelector(`li[data-socket-id="${message.playerId}"]`);
+  if (!item) {
+    return;
+  }
+
+  const existing = item._bubble;
+  if (existing) {
+    existing.remove();
+    clearTimeout(item._bubbleTimer);
+  }
+
+  const bubble = document.createElement('div');
+  bubble.className = `speech-bubble${message.correct ? ' correct' : ''}`;
+  bubble.textContent = message.message;
+  document.body.append(bubble);
+
+  const rect = item.getBoundingClientRect();
+  bubble.style.left = `${rect.left + rect.width / 2}px`;
+  bubble.style.top = `${rect.top - 8}px`;
+
+  item._bubble = bubble;
+  item._bubbleTimer = setTimeout(() => {
+    bubble.classList.add('fade-out');
+    setTimeout(() => bubble.remove(), 300);
+    item._bubble = null;
+  }, 3000);
+}
+
+function launchConfetti() {
+  if (!confetti) {
+    return;
+  }
+  const pieces = ['🎉', '⭐', '✨', '🎊', '💖', '🌈', '🍬'];
+  confetti.innerHTML = '';
+  for (let i = 0; i < 28; i += 1) {
+    const span = document.createElement('span');
+    span.textContent = pieces[i % pieces.length];
+    span.style.left = `${Math.random() * 100}%`;
+    span.style.animationDuration = `${1.4 + Math.random() * 1.4}s`;
+    span.style.animationDelay = `${Math.random() * 0.4}s`;
+    confetti.append(span);
+  }
+  setTimeout(() => {
+    confetti.innerHTML = '';
+  }, 3200);
 }
 
 function canDraw() {
