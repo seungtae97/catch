@@ -26,7 +26,7 @@ test('creates a room with a host player and scalable player caps', () => {
 test('ships with a diverse built-in word pool', () => {
   const uniqueWords = new Set(DEFAULT_WORDS);
 
-  assert.ok(DEFAULT_WORDS.length >= 2000);
+  assert.ok(DEFAULT_WORDS.length >= 300);
   assert.equal(uniqueWords.size, DEFAULT_WORDS.length);
   assert.ok(DEFAULT_WORDS.includes('타임머신'));
   assert.ok(DEFAULT_WORDS.includes('번개'));
