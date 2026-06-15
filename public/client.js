@@ -1,6 +1,7 @@
-// WebSocket을 우선 사용한다. 다른 사이트의 iframe(서드파티 컨텍스트)에서는
-// 기본 HTTP 폴링 전송이 차단/분리될 수 있어 채팅 같은 서버 왕복이 끊긴다.
-const socket = io({ transports: ['websocket', 'polling'] });
+// 기본 전송(폴링 우선 → 웹소켓 업그레이드)을 쓴다. 이게 iframe/프록시 등
+// 까다로운 환경에서 가장 호환성이 높다. 웹소켓만 강제하면 일부 iframe에서
+// 연결 자체가 막혀 방 참가까지 실패할 수 있다.
+const socket = io({ reconnection: true });
 const PLAYER_ID_KEY = 'catchmind:player-id';
 
 const entryView = document.querySelector('#entryView');
@@ -66,11 +67,25 @@ setInterval(updateTimerText, 250);
 
 socket.on('connect', () => {
   socketStatus.textContent = '연결됨';
+  // 연결 오류 안내가 떠 있었다면 지운다.
+  if (entryError.dataset.kind === 'conn') {
+    entryError.textContent = '';
+    delete entryError.dataset.kind;
+  }
   rejoinCurrentRoom();
 });
 
 socket.on('disconnect', () => {
   socketStatus.textContent = '끊김';
+});
+
+socket.on('connect_error', (err) => {
+  socketStatus.textContent = '연결 오류';
+  // 입장 화면이라면 사용자에게 연결 실패를 명확히 보여준다(특히 iframe 환경).
+  if (!entryView.classList.contains('hidden')) {
+    entryError.dataset.kind = 'conn';
+    entryError.textContent = `서버에 연결하지 못했습니다. 잠시 후 다시 시도하세요. (${err.message})`;
+  }
 });
 
 socket.on('app:error', ({ message }) => {
@@ -164,7 +179,14 @@ canvas.addEventListener('pointercancel', finishStroke);
 
 function requestRoom(eventName, payload) {
   entryError.textContent = '';
-  socket.emit(eventName, payload, (reply) => {
+  delete entryError.dataset.kind;
+  // 8초 안에 응답이 없으면(연결 안 됨/막힘) 조용히 묻히지 않고 안내한다.
+  socket.timeout(8000).emit(eventName, payload, (err, reply) => {
+    if (err) {
+      entryError.dataset.kind = 'conn';
+      showError('서버에 연결하지 못했습니다. 연결 상태를 확인하고 다시 시도하세요.');
+      return;
+    }
     if (!reply?.ok) {
       showError(reply?.message ?? '요청을 처리하지 못했습니다');
       return;
