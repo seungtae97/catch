@@ -534,13 +534,17 @@ function drawSegment(from, to, stroke) {
 }
 
 function getOrCreatePlayerId() {
+  // sessionStorage는 탭마다 분리된다. localStorage를 쓰면 같은 브라우저의 여러 탭이
+  // 같은 플레이어 ID를 공유해서, 한 탭에서 방을 만들고 다른 탭에서 그 방에 들어가면
+  // 서버가 같은 사람의 재접속으로 처리해 새 참가자로 추가되지 않는다.
+  // 같은 탭 안에서의 네트워크 끊김 재연결은 sessionStorage로도 그대로 동작한다.
   try {
-    const existing = localStorage.getItem(PLAYER_ID_KEY);
+    const existing = sessionStorage.getItem(PLAYER_ID_KEY);
     if (existing) {
       return existing;
     }
     const next = createPlayerId();
-    localStorage.setItem(PLAYER_ID_KEY, next);
+    sessionStorage.setItem(PLAYER_ID_KEY, next);
     return next;
   } catch {
     return createPlayerId();
