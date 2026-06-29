@@ -5,7 +5,9 @@ import {
   MAX_PLAYERS,
   EXPANSION_MAX_PLAYERS,
   MAX_ROUNDS,
+  ROUND_OPTIONS,
   TURN_DURATION_SECONDS,
+  TURN_DURATION_OPTIONS_SECONDS,
   DEFAULT_WORDS
 } from '../src/game/roomManager.js';
 
@@ -14,13 +16,41 @@ test('creates a room with a host player and scalable player caps', () => {
 
   const snapshot = rooms.createRoom({ socketId: 's1', name: 'Mina' });
 
-  assert.equal(MAX_PLAYERS, 4);
+  assert.equal(MAX_PLAYERS, 8);
   assert.equal(EXPANSION_MAX_PLAYERS, 8);
   assert.equal(MAX_ROUNDS, 10);
+  assert.deepEqual(ROUND_OPTIONS, [3, 5, 7, 10]);
+  assert.deepEqual(TURN_DURATION_OPTIONS_SECONDS, [60, 120, 180, 300]);
   assert.equal(snapshot.code, 'ABCD');
+  assert.equal(snapshot.maxPlayers, 8);
+  assert.equal(snapshot.maxRounds, 10);
+  assert.equal(snapshot.turnDurationSeconds, 60);
   assert.equal(snapshot.players.length, 1);
   assert.equal(snapshot.players[0].name, 'Mina');
   assert.equal(snapshot.players[0].isHost, true);
+});
+
+test('stores host-selected round and drawing time options', () => {
+  const rooms = new RoomManager({
+    codeGenerator: () => 'OPTS',
+    words: ['alpha'],
+    now: () => 1000
+  });
+
+  rooms.createRoom({
+    socketId: 'host',
+    name: 'Host',
+    maxRounds: 7,
+    turnDurationSeconds: 180
+  });
+  rooms.joinRoom({ code: 'OPTS', socketId: 'guest', name: 'Guest' });
+
+  const snapshot = rooms.startGame({ code: 'OPTS', socketId: 'host', viewerSocketId: 'host' });
+
+  assert.equal(snapshot.maxRounds, 7);
+  assert.equal(snapshot.turnDurationSeconds, 180);
+  assert.equal(snapshot.currentTurn.endsAt, 181000);
+  assert.equal(snapshot.currentTurn.remainingSeconds, 180);
 });
 
 test('ships with a diverse built-in word pool', () => {
@@ -33,29 +63,29 @@ test('ships with a diverse built-in word pool', () => {
   assert.ok(DEFAULT_WORDS.includes('치킨'));
 });
 
-test('finishes the game after ten complete rounds', () => {
+test('finishes the game after the selected number of complete rounds', () => {
   const rooms = new RoomManager({
     codeGenerator: () => 'DONE',
     words: ['alpha', 'bravo', 'charlie', 'delta'],
     random: () => 0
   });
-  rooms.createRoom({ socketId: 'host', name: 'Host' });
+  rooms.createRoom({ socketId: 'host', name: 'Host', maxRounds: 3 });
   rooms.joinRoom({ code: 'DONE', socketId: 'guest', name: 'Guest' });
 
   rooms.startGame({ code: 'DONE', socketId: 'host', viewerSocketId: 'host' });
-  for (let turn = 1; turn < MAX_ROUNDS * 2; turn += 1) {
+  for (let turn = 1; turn < 3 * 2; turn += 1) {
     rooms.nextTurn({ code: 'DONE', socketId: 'host', viewerSocketId: 'host' });
   }
 
   const finalTurn = rooms.rooms.get('DONE').currentTurn;
   assert.equal(finalTurn.drawerSocketId, 'guest');
-  assert.equal(rooms.rooms.get('DONE').round, 10);
+  assert.equal(rooms.rooms.get('DONE').round, 3);
 
   const finished = rooms.nextTurn({ code: 'DONE', socketId: 'host', viewerSocketId: 'host' });
 
   assert.equal(finished.status, 'finished');
-  assert.equal(finished.round, 10);
-  assert.equal(finished.maxRounds, 10);
+  assert.equal(finished.round, 3);
+  assert.equal(finished.maxRounds, 3);
   assert.equal(finished.currentTurn, null);
 });
 
@@ -80,17 +110,40 @@ test('draws words from a shuffled deck without repeats until the deck is exhaust
   assert.equal(new Set(seen).size, 4);
 });
 
-test('rejects joins after the current 4-player limit', () => {
+test('rejects joins after the current 8-player limit', () => {
   const rooms = new RoomManager({ codeGenerator: () => 'ROOM' });
   rooms.createRoom({ socketId: 's1', name: 'A' });
-  rooms.joinRoom({ code: 'ROOM', socketId: 's2', name: 'B' });
-  rooms.joinRoom({ code: 'ROOM', socketId: 's3', name: 'C' });
-  rooms.joinRoom({ code: 'ROOM', socketId: 's4', name: 'D' });
+  for (let player = 2; player <= 8; player += 1) {
+    rooms.joinRoom({ code: 'ROOM', socketId: `s${player}`, name: `P${player}` });
+  }
+
+  assert.equal(rooms.getSnapshotForSocket({ code: 'ROOM', viewerSocketId: 's1' }).players.length, 8);
 
   assert.throws(
-    () => rooms.joinRoom({ code: 'ROOM', socketId: 's5', name: 'E' }),
+    () => rooms.joinRoom({ code: 'ROOM', socketId: 's9', name: 'P9' }),
     /Room is full/
   );
+});
+
+test('allows only the host to manually advance the turn', () => {
+  const rooms = new RoomManager({
+    codeGenerator: () => 'HOST',
+    words: ['alpha', 'bravo'],
+    random: () => 0
+  });
+  rooms.createRoom({ socketId: 'host', name: 'Host' });
+  rooms.joinRoom({ code: 'HOST', socketId: 'guest', name: 'Guest' });
+  rooms.startGame({ code: 'HOST', socketId: 'host', viewerSocketId: 'host' });
+  rooms.nextTurn({ code: 'HOST', socketId: 'host', viewerSocketId: 'host' });
+
+  assert.equal(rooms.rooms.get('HOST').currentTurn.drawerSocketId, 'guest');
+  assert.throws(
+    () => rooms.nextTurn({ code: 'HOST', socketId: 'guest', viewerSocketId: 'guest' }),
+    /Only the host can advance the turn/
+  );
+
+  const advanced = rooms.nextTurn({ code: 'HOST', socketId: 'host', viewerSocketId: 'host' });
+  assert.equal(advanced.currentTurn.drawerSocketId, 'host');
 });
 
 test('starts a turn with a drawer and hides the word from guessers', () => {

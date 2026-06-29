@@ -1,10 +1,12 @@
 import { randomInt } from 'node:crypto';
 import { createGeneratedWords } from './wordPool.js';
 
-export const MAX_PLAYERS = 4;
+export const MAX_PLAYERS = 8;
 export const EXPANSION_MAX_PLAYERS = 8;
 export const MAX_ROUNDS = 10;
 export const TURN_DURATION_SECONDS = 60;
+export const ROUND_OPTIONS = Object.freeze([3, 5, 7, 10]);
+export const TURN_DURATION_OPTIONS_SECONDS = Object.freeze([60, 120, 180, 300]);
 export const GUESSER_POINTS = 10;
 export const DRAWER_POINTS = 5;
 
@@ -143,11 +145,13 @@ export class RoomManager {
     this.rooms = new Map();
   }
 
-  createRoom({ socketId, name, playerId }) {
+  createRoom({ socketId, name, playerId, maxRounds, turnDurationSeconds }) {
     const player = createPlayer({ socketId, name, playerId, isHost: true });
     const code = this.createUniqueCode();
     const room = {
       code,
+      maxRounds: normalizeChoice(maxRounds, ROUND_OPTIONS, MAX_ROUNDS),
+      turnDurationSeconds: normalizeChoice(turnDurationSeconds, TURN_DURATION_OPTIONS_SECONDS, TURN_DURATION_SECONDS),
       players: [player],
       messages: [],
       strokes: [],
@@ -205,15 +209,22 @@ export class RoomManager {
     if (room.status !== 'playing' && room.status !== 'turn-ended') {
       throw new Error('Game has not started');
     }
-    const isDrawer = room.currentTurn?.drawerSocketId === socketId;
     const isHost = room.players.find((player) => player.socketId === socketId)?.isHost;
-    if (!isDrawer && !isHost) {
-      throw new Error('Only the drawer or host can advance the turn');
+    if (!isHost) {
+      throw new Error('Only the host can advance the turn');
     }
 
+    return this.advanceTurn({ code, viewerSocketId });
+  }
+
+  advanceTurn({ code, viewerSocketId }) {
+    const room = this.getRoom(code);
+    if (room.status !== 'playing' && room.status !== 'turn-ended') {
+      throw new Error('Game has not started');
+    }
     const nextIndex = (room.turnIndex + 1) % room.players.length;
     if (nextIndex === 0) {
-      if (room.round >= MAX_ROUNDS) {
+      if (room.round >= room.maxRounds) {
         this.finishGame(room);
         return this.snapshot(room, viewerSocketId);
       }
@@ -369,7 +380,7 @@ export class RoomManager {
       word,
       hint: `${[...word].length}글자`,
       startedAt,
-      endsAt: startedAt + TURN_DURATION_SECONDS * 1000,
+      endsAt: startedAt + room.turnDurationSeconds * 1000,
       solvedBy: null
     };
   }
@@ -410,7 +421,8 @@ export class RoomManager {
       code: room.code,
       maxPlayers: MAX_PLAYERS,
       expansionMaxPlayers: EXPANSION_MAX_PLAYERS,
-      maxRounds: MAX_ROUNDS,
+      maxRounds: room.maxRounds,
+      turnDurationSeconds: room.turnDurationSeconds,
       status: room.status,
       round: room.round,
       players: room.players.map((player) => ({ ...player })),
@@ -495,6 +507,11 @@ function normalizeName(name) {
   }
 
   return trimmedName.slice(0, 16);
+}
+
+function normalizeChoice(value, allowedValues, fallback) {
+  const numericValue = Number(value);
+  return allowedValues.includes(numericValue) ? numericValue : fallback;
 }
 
 function normalizeWordPool(words) {

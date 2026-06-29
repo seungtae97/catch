@@ -8,17 +8,18 @@ import { RoomManager } from './game/roomManager.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, '..', 'public');
+export const AUTO_ADVANCE_DELAY_MS = 5000;
 
-export function createServerApp() {
+export function createServerApp({ roomManager = new RoomManager(), autoAdvanceDelayMs = AUTO_ADVANCE_DELAY_MS } = {}) {
   const expressApp = express();
   const httpServer = http.createServer(expressApp);
   // 다른 사이트의 iframe에서 임베드해도 소켓이 연결되도록 교차 출처를 허용한다.
   const io = new Server(httpServer, {
     cors: { origin: true, credentials: true }
   });
-  const roomManager = new RoomManager();
   const socketRooms = new Map();
   const turnTimers = new Map();
+  const advanceTimers = new Map();
 
   expressApp.get('/healthz', (_request, response) => {
     response.status(200).json({ ok: true, service: 'catchmind-web' });
@@ -53,6 +54,43 @@ export function createServerApp() {
       }
     };
 
+    const clearAdvanceTimer = (code) => {
+      const roomCode = String(code ?? '').toUpperCase();
+      const timer = advanceTimers.get(roomCode);
+      if (timer) {
+        clearTimeout(timer);
+        advanceTimers.delete(roomCode);
+      }
+    };
+
+    const clearRoomTimers = (code) => {
+      clearTurnTimer(code);
+      clearAdvanceTimer(code);
+    };
+
+    const scheduleAutoAdvance = (code) => {
+      const roomCode = String(code ?? '').toUpperCase();
+      const room = roomManager.rooms.get(roomCode);
+      clearAdvanceTimer(roomCode);
+      if (!room || room.status !== 'turn-ended') {
+        return;
+      }
+
+      const timer = setTimeout(() => {
+        advanceTimers.delete(roomCode);
+        const latestRoom = roomManager.rooms.get(roomCode);
+        if (!latestRoom || latestRoom.status !== 'turn-ended') {
+          return;
+        }
+
+        roomManager.advanceTurn({ code: roomCode, viewerSocketId: latestRoom.players[0]?.socketId });
+        io.to(roomCode).emit('draw:clear');
+        scheduleTurnTimer(roomCode);
+        emitRoom(roomCode);
+      }, autoAdvanceDelayMs);
+      advanceTimers.set(roomCode, timer);
+    };
+
     const scheduleTurnTimer = (code) => {
       const roomCode = String(code ?? '').toUpperCase();
       const room = roomManager.rooms.get(roomCode);
@@ -67,6 +105,7 @@ export function createServerApp() {
         turnTimers.delete(roomCode);
         if (result.expired) {
           emitRoom(roomCode);
+          scheduleAutoAdvance(roomCode);
         }
       }, delay);
       turnTimers.set(roomCode, timer);
@@ -84,9 +123,15 @@ export function createServerApp() {
       return snapshot;
     };
 
-    socket.on('room:create', ({ name, playerId }, reply) => {
+    socket.on('room:create', ({ name, playerId, maxRounds, turnDurationSeconds }, reply) => {
       try {
-        const snapshot = roomManager.createRoom({ socketId: socket.id, name, playerId });
+        const snapshot = roomManager.createRoom({
+          socketId: socket.id,
+          name,
+          playerId,
+          maxRounds,
+          turnDurationSeconds
+        });
         socket.join(snapshot.code);
         socketRooms.set(socket.id, snapshot.code);
         reply?.({ ok: true, snapshot });
@@ -154,6 +199,7 @@ export function createServerApp() {
         io.to(code).emit('chat:message', result.chat);
         if (result.correct) {
           clearTurnTimer(code);
+          scheduleAutoAdvance(code);
         }
         emitRoom(code);
       } catch (error) {
@@ -165,6 +211,7 @@ export function createServerApp() {
     socket.on('turn:next', (reply) => {
       try {
         const code = socketRooms.get(socket.id);
+        clearAdvanceTimer(code);
         const snapshot = roomManager.nextTurn({ code, socketId: socket.id, viewerSocketId: socket.id });
         io.to(code).emit('draw:clear');
         reply?.({ ok: true, snapshot });
@@ -184,7 +231,7 @@ export function createServerApp() {
         scheduleTurnTimer(code);
         emitRoom(code);
       } else if (code) {
-        clearTurnTimer(code);
+        clearRoomTimers(code);
       }
     });
   });

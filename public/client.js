@@ -9,6 +9,8 @@ const gameView = document.querySelector('#gameView');
 const entryForm = document.querySelector('#entryForm');
 const nameInput = document.querySelector('#nameInput');
 const roomInput = document.querySelector('#roomInput');
+const turnDurationSelect = document.querySelector('#turnDurationSelect');
+const roundSelect = document.querySelector('#roundSelect');
 const createRoomBtn = document.querySelector('#createRoomBtn');
 const entryError = document.querySelector('#entryError');
 const roomCode = document.querySelector('#roomCode');
@@ -112,7 +114,12 @@ socket.on('chat:message', (message) => {
 
 createRoomBtn.addEventListener('click', () => {
   const name = nameInput.value.trim();
-  requestRoom('room:create', { name, playerId });
+  requestRoom('room:create', {
+    name,
+    playerId,
+    turnDurationSeconds: Number(turnDurationSelect.value),
+    maxRounds: Number(roundSelect.value)
+  });
 });
 
 entryForm.addEventListener('submit', (event) => {
@@ -247,7 +254,8 @@ function koreanError(message) {
     'At least 2 players are required': '최소 2명이 필요합니다',
     'Only the host can start the game': '방장만 시작할 수 있습니다',
     'Only the drawer can draw': '그리는 사람만 그릴 수 있습니다',
-    'Only the drawer or host can advance the turn': '그리는 사람 또는 방장만 넘길 수 있습니다'
+    'Only the drawer or host can advance the turn': '그리는 사람 또는 방장만 넘길 수 있습니다',
+    'Only the host can advance the turn': '방장만 넘길 수 있습니다'
   };
   return map[message] ?? message;
 }
@@ -273,7 +281,7 @@ function renderState() {
   } else if (state.viewer.isDrawer) {
     wordText.textContent = `내 차례입니다! 제시어: ${state.currentTurn.word}`;
   } else if (state.status === 'turn-ended') {
-    wordText.textContent = `정답 완료: ${state.currentTurn.drawerName}의 차례`;
+    wordText.textContent = `정답 공개 중: 5초 후 다음 차례`;
   } else {
     wordText.textContent = `${state.currentTurn.drawerName} 그림 | 힌트 ${state.currentTurn.hint}`;
   }
@@ -282,7 +290,7 @@ function renderState() {
   updateTimerText();
 
   startBtn.disabled = !state.viewer.isHost || state.status !== 'waiting' || state.players.length < 2;
-  nextTurnBtn.disabled = !state.currentTurn || (!state.viewer.isDrawer && !state.viewer.isHost);
+  nextTurnBtn.disabled = !state.currentTurn || !state.viewer.isHost;
   clearBtn.disabled = !canDraw();
   canvas.classList.toggle('locked', !canDraw());
   drawLock.textContent = canDraw() ? '지금 그릴 차례입니다' : '그리는 차례가 아닙니다';

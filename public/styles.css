@@ -77,7 +77,8 @@ body::before {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -120,7 +121,8 @@ button:disabled {
   box-shadow: none;
 }
 
-input {
+input,
+select {
   width: 100%;
   min-height: 46px;
   border: var(--border-width) solid var(--line);
@@ -131,7 +133,15 @@ input {
   transition: border-color var(--transition), box-shadow var(--transition);
 }
 
-input:focus {
+select {
+  appearance: none;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--accent-strong) 50%) right 18px center / 8px 8px no-repeat,
+    var(--panel);
+}
+
+input:focus,
+select:focus {
   outline: none;
   border-color: var(--accent-strong);
   box-shadow: 0 0 0 4px var(--badge-bg);
@@ -208,6 +218,12 @@ h1 {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
   margin-top: 6px;
+}
+
+.room-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 }
 
 .error {
@@ -828,6 +844,7 @@ canvas.locked {
   }
 
   .entry-actions,
+  .room-options,
   .chat-form {
     grid-template-columns: 1fr;
   }

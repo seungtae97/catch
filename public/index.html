@@ -24,6 +24,26 @@
               방 코드
               <input id="roomInput" maxlength="4" autocomplete="off" placeholder="참가할 때 입력">
             </label>
+            <div class="room-options" aria-label="방 만들기 옵션">
+              <label>
+                그림 시간
+                <select id="turnDurationSelect">
+                  <option value="60">1분</option>
+                  <option value="120">2분</option>
+                  <option value="180">3분</option>
+                  <option value="300">5분</option>
+                </select>
+              </label>
+              <label>
+                라운드
+                <select id="roundSelect">
+                  <option value="3">3라운드</option>
+                  <option value="5">5라운드</option>
+                  <option value="7">7라운드</option>
+                  <option value="10" selected>10라운드</option>
+                </select>
+              </label>
+            </div>
             <div class="entry-actions">
               <button type="button" id="createRoomBtn">방 만들기</button>
               <button type="submit" class="secondary">방 참가</button>
@@ -54,7 +74,7 @@
           <aside class="side-panel">
             <div class="panel-heading">
               <h3>플레이어</h3>
-              <span id="playerCount">0/4</span>
+              <span id="playerCount">0/8</span>
             </div>
             <ul id="playerList" class="player-list"></ul>
           </aside>
