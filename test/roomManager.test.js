@@ -119,11 +119,16 @@ test('stores host-selected round and drawing time options', () => {
 test('ships with a diverse built-in word pool', () => {
   const uniqueWords = new Set(DEFAULT_WORDS);
 
-  assert.ok(DEFAULT_WORDS.length >= 300);
+  assert.ok(DEFAULT_WORDS.length >= 650);
   assert.equal(uniqueWords.size, DEFAULT_WORDS.length);
   assert.ok(DEFAULT_WORDS.includes('타임머신'));
   assert.ok(DEFAULT_WORDS.includes('번개'));
   assert.ok(DEFAULT_WORDS.includes('치킨'));
+  assert.ok(DEFAULT_WORDS.includes('양자컴퓨터'));
+  assert.ok(DEFAULT_WORDS.includes('상대성이론'));
+  assert.ok(DEFAULT_WORDS.includes('판옵티콘'));
+  assert.ok(DEFAULT_WORDS.includes('전자현미경'));
+  assert.ok(DEFAULT_WORDS.includes('만리장성'));
 });
 
 test('finishes the game after the selected number of complete rounds', () => {
