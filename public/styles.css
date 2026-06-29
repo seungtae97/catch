@@ -215,7 +215,7 @@ h1 {
 
 .entry-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-top: 6px;
 }
@@ -381,6 +381,12 @@ h1 {
 
 .player-list li:hover {
   transform: translateY(-2px);
+}
+
+.player-list li.spectator-item {
+  border-style: dashed;
+  background: #f8fbff;
+  color: #4f6284;
 }
 
 .player-list strong {
@@ -556,6 +562,26 @@ canvas.locked {
   font-weight: 700;
 }
 
+.result-overlay.correct-reveal {
+  border-color: #00a86b;
+  background: linear-gradient(180deg, #fff7b8 0%, #c4ffe0 100%);
+  box-shadow: 0 20px 48px rgba(0, 168, 107, 0.35), 0 0 0 8px rgba(255, 183, 3, 0.28);
+}
+
+.result-overlay.correct-reveal strong {
+  color: #007f52;
+  font-size: 34px;
+  text-shadow: 0 3px 0 rgba(255, 255, 255, 0.9);
+}
+
+.result-overlay.correct-reveal span {
+  color: #175d47;
+}
+
+.result-overlay.timeout-reveal {
+  border-color: #ff4d6d;
+}
+
 /* 정답 축하 컨페티 */
 .confetti {
   position: absolute;
@@ -674,6 +700,11 @@ canvas.locked {
   font-weight: 700;
   text-align: right;
   white-space: nowrap;
+}
+
+.tool-row.spectator-mode .tool,
+.tool-row.spectator-mode #clearBtn {
+  display: none;
 }
 
 /* ---------- 채팅 ---------- */

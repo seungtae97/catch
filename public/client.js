@@ -12,6 +12,7 @@ const roomInput = document.querySelector('#roomInput');
 const turnDurationSelect = document.querySelector('#turnDurationSelect');
 const roundSelect = document.querySelector('#roundSelect');
 const createRoomBtn = document.querySelector('#createRoomBtn');
+const spectateRoomBtn = document.querySelector('#spectateRoomBtn');
 const entryError = document.querySelector('#entryError');
 const roomCode = document.querySelector('#roomCode');
 const roundText = document.querySelector('#roundText');
@@ -25,6 +26,7 @@ const socketStatus = document.querySelector('#socketStatus');
 const canvas = document.querySelector('#drawingCanvas');
 const colorSwatches = document.querySelector('#colorSwatches');
 const sizeOptions = document.querySelector('#sizeOptions');
+const toolRow = document.querySelector('.tool-row');
 const clearBtn = document.querySelector('#clearBtn');
 const drawLock = document.querySelector('#drawLock');
 const turnNotice = document.querySelector('#turnNotice');
@@ -117,6 +119,7 @@ createRoomBtn.addEventListener('click', () => {
   requestRoom('room:create', {
     name,
     playerId,
+    role: 'player',
     turnDurationSeconds: Number(turnDurationSelect.value),
     maxRounds: Number(roundSelect.value)
   });
@@ -127,6 +130,12 @@ entryForm.addEventListener('submit', (event) => {
   const name = nameInput.value.trim();
   const code = roomInput.value.trim().toUpperCase();
   requestRoom('room:join', { name, code, playerId });
+});
+
+spectateRoomBtn.addEventListener('click', () => {
+  const name = nameInput.value.trim();
+  const code = roomInput.value.trim().toUpperCase();
+  requestRoom('room:spectate', { name, code, playerId, role: 'spectator' });
 });
 
 startBtn.addEventListener('click', () => {
@@ -153,7 +162,8 @@ chatForm.addEventListener('submit', (event) => {
     message,
     code: currentSession?.code ?? state?.code,
     name: currentSession?.name,
-    playerId
+    playerId,
+    role: currentSession?.role
   }, handleReply);
   chatInput.value = '';
 });
@@ -201,7 +211,8 @@ function requestRoom(eventName, payload) {
     state = reply.snapshot;
     currentSession = {
       code: reply.snapshot.code,
-      name: payload.name
+      name: payload.name,
+      role: payload.role ?? 'player'
     };
     entryView.classList.add('hidden');
     gameView.classList.remove('hidden');
@@ -214,7 +225,8 @@ function rejoinCurrentRoom() {
     return;
   }
 
-  socket.emit('room:join', {
+  const eventName = currentSession.role === 'spectator' ? 'room:spectate' : 'room:join';
+  socket.emit(eventName, {
     code: currentSession.code,
     name: currentSession.name,
     playerId
@@ -255,7 +267,9 @@ function koreanError(message) {
     'Only the host can start the game': '방장만 시작할 수 있습니다',
     'Only the drawer can draw': '그리는 사람만 그릴 수 있습니다',
     'Only the drawer or host can advance the turn': '그리는 사람 또는 방장만 넘길 수 있습니다',
-    'Only the host can advance the turn': '방장만 넘길 수 있습니다'
+    'Only the host can advance the turn': '방장만 넘길 수 있습니다',
+    'Spectator room is full': '관전 자리가 가득 찼습니다',
+    'Spectators cannot submit answers': '관전자는 정답 입력을 할 수 없습니다'
   };
   return map[message] ?? message;
 }
@@ -267,7 +281,7 @@ function renderState() {
   entryView.classList.add('hidden');
   gameView.classList.remove('hidden');
   roomCode.textContent = state.code;
-  playerCount.textContent = `${state.players.length}/${state.maxPlayers}`;
+  playerCount.textContent = `${state.players.length}/${state.maxPlayers} · 관전 ${state.spectators?.length ?? 0}/${state.maxSpectators ?? 4}`;
   roundText.textContent = state.status === 'waiting'
     ? '대기 중'
     : `${state.round}/${state.maxRounds ?? 10}라운드`;
@@ -278,6 +292,8 @@ function renderState() {
   } else if (!state.currentTurn) {
     wordText.textContent = '방장이 게임을 시작하세요';
     timerText.textContent = '--초';
+  } else if (state.viewer.isSpectator) {
+    wordText.textContent = `${state.currentTurn.drawerName} 그림 관전 중 | 힌트 ${state.currentTurn.hint}`;
   } else if (state.viewer.isDrawer) {
     wordText.textContent = `내 차례입니다! 제시어: ${state.currentTurn.word}`;
   } else if (state.status === 'turn-ended') {
@@ -293,10 +309,13 @@ function renderState() {
   nextTurnBtn.disabled = !state.currentTurn || !state.viewer.isHost;
   clearBtn.disabled = !canDraw();
   canvas.classList.toggle('locked', !canDraw());
-  drawLock.textContent = canDraw() ? '지금 그릴 차례입니다' : '그리는 차례가 아닙니다';
+  toolRow.classList.toggle('spectator-mode', Boolean(state.viewer.isSpectator));
+  drawLock.textContent = state.viewer.isSpectator
+    ? '관전 중입니다'
+    : canDraw() ? '지금 그릴 차례입니다' : '그리는 차례가 아닙니다';
   chatInput.placeholder = state.status === 'finished'
     ? '게임이 종료되었습니다'
-    : state.viewer.isDrawer ? '그리는 사람은 채팅만 가능' : '정답 또는 채팅 입력';
+    : state.viewer.isSpectator ? '관전 채팅 입력' : state.viewer.isDrawer ? '그리는 사람은 채팅만 가능' : '정답 또는 채팅 입력';
 
   renderPlayers();
   renderMessages();
@@ -349,6 +368,7 @@ function renderReveal() {
   const reveal = state?.lastReveal;
   if (!reveal) {
     resultOverlay.classList.add('hidden');
+    resultOverlay.classList.remove('correct-reveal', 'timeout-reveal');
     resultTitle.textContent = '';
     resultDetail.textContent = '';
     lastRevealKey = null;
@@ -360,6 +380,8 @@ function renderReveal() {
   lastRevealKey = revealKey;
 
   resultOverlay.classList.remove('hidden');
+  resultOverlay.classList.toggle('correct-reveal', Boolean(reveal.guesserName));
+  resultOverlay.classList.toggle('timeout-reveal', !reveal.guesserName);
   if (reveal.guesserName) {
     resultTitle.textContent = `정답: ${reveal.word}`;
     resultDetail.textContent = `${reveal.guesserName} +${reveal.guesserScore}점, ${reveal.drawerName} +${reveal.drawerScore}점`;
@@ -389,6 +411,20 @@ function renderPlayers() {
     if (state.currentTurn?.drawerSocketId === player.socketId) {
       badges.append(makeBadge('그림', 'gold'));
     }
+    item.append(name, score, badges);
+    playerList.append(item);
+  }
+  for (const spectator of state.spectators ?? []) {
+    const item = document.createElement('li');
+    item.dataset.socketId = spectator.socketId;
+    item.className = 'spectator-item';
+    const name = document.createElement('strong');
+    const score = document.createElement('span');
+    const badges = document.createElement('div');
+    name.textContent = spectator.name;
+    score.textContent = '관전';
+    badges.className = 'badges';
+    badges.append(makeBadge('관전'));
     item.append(name, score, badges);
     playerList.append(item);
   }
@@ -515,7 +551,7 @@ function launchConfetti() {
 }
 
 function canDraw() {
-  return Boolean(state?.viewer?.isDrawer && state.status === 'playing');
+  return Boolean(!state?.viewer?.isSpectator && state?.viewer?.isDrawer && state.status === 'playing');
 }
 
 function canvasPoint(event) {

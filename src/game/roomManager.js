@@ -2,13 +2,15 @@ import { randomInt } from 'node:crypto';
 import { createGeneratedWords } from './wordPool.js';
 
 export const MAX_PLAYERS = 8;
+export const MAX_SPECTATORS = 4;
 export const EXPANSION_MAX_PLAYERS = 8;
 export const MAX_ROUNDS = 10;
-export const TURN_DURATION_SECONDS = 60;
+export const TURN_DURATION_SECONDS = 120;
 export const ROUND_OPTIONS = Object.freeze([3, 5, 7, 10]);
 export const TURN_DURATION_OPTIONS_SECONDS = Object.freeze([60, 120, 180, 300]);
 export const GUESSER_POINTS = 10;
 export const DRAWER_POINTS = 5;
+const DEFAULT_ROUNDS = 3;
 
 const LEGACY_WORDS = Object.freeze([
   '사과',
@@ -150,9 +152,10 @@ export class RoomManager {
     const code = this.createUniqueCode();
     const room = {
       code,
-      maxRounds: normalizeChoice(maxRounds, ROUND_OPTIONS, MAX_ROUNDS),
+      maxRounds: normalizeChoice(maxRounds, ROUND_OPTIONS, DEFAULT_ROUNDS),
       turnDurationSeconds: normalizeChoice(turnDurationSeconds, TURN_DURATION_OPTIONS_SECONDS, TURN_DURATION_SECONDS),
       players: [player],
+      spectators: [],
       messages: [],
       strokes: [],
       status: 'waiting',
@@ -188,6 +191,28 @@ export class RoomManager {
     }
 
     room.players.push(createPlayer({ socketId, name, playerId: normalizedPlayerId, isHost: false }));
+    return this.snapshot(room, socketId);
+  }
+
+  spectateRoom({ code, socketId, name, playerId }) {
+    const room = this.getRoom(code);
+    const normalizedPlayerId = normalizePlayerId(playerId, socketId);
+    const existingSpectator = room.spectators.find((spectator) => spectator.id === normalizedPlayerId);
+    if (existingSpectator) {
+      existingSpectator.socketId = socketId;
+      if (String(name ?? '').trim()) {
+        existingSpectator.name = normalizeName(name);
+      }
+      return this.snapshot(room, socketId);
+    }
+    if (room.spectators.some((spectator) => spectator.socketId === socketId)) {
+      return this.snapshot(room, socketId);
+    }
+    if (room.spectators.length >= MAX_SPECTATORS) {
+      throw new Error('Spectator room is full');
+    }
+
+    room.spectators.push(createSpectator({ socketId, name, playerId: normalizedPlayerId }));
     return this.snapshot(room, socketId);
   }
 
@@ -281,7 +306,7 @@ export class RoomManager {
 
   submitChat({ code, socketId, message }) {
     const room = this.getRoom(code);
-    const player = this.getPlayer(room, socketId);
+    const { member, role } = this.getParticipant(room, socketId);
     const text = String(message ?? '').trim();
     if (!text) {
       throw new Error('Message is required');
@@ -291,22 +316,32 @@ export class RoomManager {
       this.expireTurn({ code: room.code });
     }
 
+    const matchesAnswer = room.status === 'playing'
+      && room.currentTurn
+      && text.localeCompare(room.currentTurn.word, 'ko', { sensitivity: 'base' }) === 0;
+    if (role === 'spectator' && matchesAnswer) {
+      throw new Error('Spectators cannot submit answers');
+    }
+
     const correct = room.status === 'playing'
       && room.currentTurn
+      && role === 'player'
       && socketId !== room.currentTurn.drawerSocketId
-      && text.localeCompare(room.currentTurn.word, 'ko', { sensitivity: 'base' }) === 0;
+      && matchesAnswer;
 
     const chat = {
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       playerId: socketId,
-      playerName: player.name,
+      playerName: member.name,
       message: correct ? '정답!' : text,
       correct,
+      role,
       createdAt: Date.now()
     };
 
     room.messages.push(chat);
     if (correct) {
+      const player = member;
       player.score += GUESSER_POINTS;
       const drawer = this.getPlayer(room, room.currentTurn.drawerSocketId);
       drawer.score += DRAWER_POINTS;
@@ -331,6 +366,12 @@ export class RoomManager {
 
   removePlayer(socketId) {
     for (const [code, room] of this.rooms) {
+      const spectatorIndex = room.spectators.findIndex((spectator) => spectator.socketId === socketId);
+      if (spectatorIndex !== -1) {
+        room.spectators.splice(spectatorIndex, 1);
+        return { code, snapshot: this.snapshot(room, room.players[0]?.socketId) };
+      }
+
       const index = room.players.findIndex((player) => player.socketId === socketId);
       if (index === -1) {
         continue;
@@ -420,12 +461,14 @@ export class RoomManager {
     return {
       code: room.code,
       maxPlayers: MAX_PLAYERS,
+      maxSpectators: MAX_SPECTATORS,
       expansionMaxPlayers: EXPANSION_MAX_PLAYERS,
       maxRounds: room.maxRounds,
       turnDurationSeconds: room.turnDurationSeconds,
       status: room.status,
       round: room.round,
       players: room.players.map((player) => ({ ...player })),
+      spectators: room.spectators.map((spectator) => ({ ...spectator })),
       messages: room.messages.slice(-60),
       strokes: room.strokes,
       lastReveal: room.lastReveal ? { ...room.lastReveal } : null,
@@ -444,7 +487,8 @@ export class RoomManager {
       viewer: {
         socketId: viewerSocketId,
         isDrawer: Boolean(isDrawer),
-        isHost: Boolean(room.players.find((player) => player.socketId === viewerSocketId)?.isHost)
+        isHost: Boolean(room.players.find((player) => player.socketId === viewerSocketId)?.isHost),
+        isSpectator: Boolean(room.spectators.find((spectator) => spectator.socketId === viewerSocketId))
       }
     };
   }
@@ -463,6 +507,18 @@ export class RoomManager {
       throw new Error('Player not found');
     }
     return player;
+  }
+
+  getParticipant(room, socketId) {
+    const player = room.players.find((candidate) => candidate.socketId === socketId);
+    if (player) {
+      return { member: player, role: 'player' };
+    }
+    const spectator = room.spectators.find((candidate) => candidate.socketId === socketId);
+    if (spectator) {
+      return { member: spectator, role: 'spectator' };
+    }
+    throw new Error('Player not found');
   }
 
   requireHost(room, socketId) {
@@ -492,6 +548,14 @@ function createPlayer({ socketId, name, playerId, isHost }) {
     name: normalizeName(name),
     score: 0,
     isHost
+  };
+}
+
+function createSpectator({ socketId, name, playerId }) {
+  return {
+    id: normalizePlayerId(playerId, socketId),
+    socketId,
+    name: normalizeName(name)
   };
 }
 

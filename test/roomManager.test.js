@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   RoomManager,
   MAX_PLAYERS,
+  MAX_SPECTATORS,
   EXPANSION_MAX_PLAYERS,
   MAX_ROUNDS,
   ROUND_OPTIONS,
@@ -17,17 +18,79 @@ test('creates a room with a host player and scalable player caps', () => {
   const snapshot = rooms.createRoom({ socketId: 's1', name: 'Mina' });
 
   assert.equal(MAX_PLAYERS, 8);
+  assert.equal(MAX_SPECTATORS, 4);
   assert.equal(EXPANSION_MAX_PLAYERS, 8);
   assert.equal(MAX_ROUNDS, 10);
   assert.deepEqual(ROUND_OPTIONS, [3, 5, 7, 10]);
   assert.deepEqual(TURN_DURATION_OPTIONS_SECONDS, [60, 120, 180, 300]);
   assert.equal(snapshot.code, 'ABCD');
   assert.equal(snapshot.maxPlayers, 8);
-  assert.equal(snapshot.maxRounds, 10);
-  assert.equal(snapshot.turnDurationSeconds, 60);
+  assert.equal(snapshot.maxSpectators, 4);
+  assert.equal(snapshot.maxRounds, 3);
+  assert.equal(snapshot.turnDurationSeconds, 120);
   assert.equal(snapshot.players.length, 1);
+  assert.equal(snapshot.spectators.length, 0);
   assert.equal(snapshot.players[0].name, 'Mina');
   assert.equal(snapshot.players[0].isHost, true);
+});
+
+test('adds up to four spectators without consuming player slots', () => {
+  const rooms = new RoomManager({
+    codeGenerator: () => 'SPEC',
+    words: ['alpha', 'bravo'],
+    random: () => 0
+  });
+  rooms.createRoom({ socketId: 'host', name: 'Host' });
+  for (let player = 2; player <= 8; player += 1) {
+    rooms.joinRoom({ code: 'SPEC', socketId: `p${player}`, name: `P${player}` });
+  }
+  for (let spectator = 1; spectator <= 4; spectator += 1) {
+    rooms.spectateRoom({ code: 'SPEC', socketId: `v${spectator}`, name: `Viewer${spectator}` });
+  }
+
+  const snapshot = rooms.getSnapshotForSocket({ code: 'SPEC', viewerSocketId: 'v1' });
+  assert.equal(snapshot.players.length, 8);
+  assert.equal(snapshot.spectators.length, 4);
+  assert.equal(snapshot.viewer.isSpectator, true);
+  assert.equal(snapshot.viewer.isDrawer, false);
+  assert.equal(snapshot.viewer.isHost, false);
+
+  assert.throws(
+    () => rooms.spectateRoom({ code: 'SPEC', socketId: 'v5', name: 'Viewer5' }),
+    /Spectator room is full/
+  );
+});
+
+test('spectators can chat but cannot solve, draw, or advance turns', () => {
+  const rooms = new RoomManager({
+    codeGenerator: () => 'VIEW',
+    words: ['alpha', 'bravo'],
+    random: () => 0
+  });
+  rooms.createRoom({ socketId: 'host', name: 'Host' });
+  rooms.joinRoom({ code: 'VIEW', socketId: 'guest', name: 'Guest' });
+  rooms.spectateRoom({ code: 'VIEW', socketId: 'viewer', name: 'Viewer' });
+  const started = rooms.startGame({ code: 'VIEW', socketId: 'host', viewerSocketId: 'host' });
+
+  const result = rooms.submitChat({ code: 'VIEW', socketId: 'viewer', message: 'hello' });
+
+  assert.equal(result.correct, false);
+  assert.equal(result.snapshot.status, 'playing');
+  assert.equal(result.chat.message, 'hello');
+  assert.equal(result.snapshot.players.find((player) => player.socketId === 'viewer'), undefined);
+  assert.equal(result.snapshot.spectators[0].name, 'Viewer');
+  assert.throws(
+    () => rooms.submitChat({ code: 'VIEW', socketId: 'viewer', message: started.currentTurn.word }),
+    /Spectators cannot submit answers/
+  );
+  assert.throws(
+    () => rooms.addStroke({ code: 'VIEW', socketId: 'viewer', stroke: { points: [{ x: 1, y: 1 }] } }),
+    /Only the drawer can draw/
+  );
+  assert.throws(
+    () => rooms.nextTurn({ code: 'VIEW', socketId: 'viewer', viewerSocketId: 'viewer' }),
+    /Only the host can advance the turn/
+  );
 });
 
 test('stores host-selected round and drawing time options', () => {
@@ -162,14 +225,14 @@ test('starts a turn with a drawer and hides the word from guessers', () => {
   assert.equal(drawerView.currentTurn.word, '사과');
   assert.equal(guesserView.currentTurn.word, null);
   assert.equal(guesserView.currentTurn.hint, '2글자');
-  assert.equal(TURN_DURATION_SECONDS, 60);
-  assert.equal(drawerView.currentTurn.endsAt, 61000);
-  assert.equal(guesserView.currentTurn.remainingSeconds, 60);
+  assert.equal(TURN_DURATION_SECONDS, 120);
+  assert.equal(drawerView.currentTurn.endsAt, 121000);
+  assert.equal(guesserView.currentTurn.remainingSeconds, 120);
 });
 
 test('accepts drawing only from the active drawer', () => {
   const rooms = new RoomManager({ codeGenerator: () => 'DRAW', words: ['바다'] });
-  rooms.createRoom({ socketId: 'drawer', name: 'Drawer' });
+  rooms.createRoom({ socketId: 'drawer', name: 'Drawer', turnDurationSeconds: 60 });
   rooms.joinRoom({ code: 'DRAW', socketId: 'guesser', name: 'Guesser' });
   rooms.startGame({ code: 'DRAW', socketId: 'drawer', viewerSocketId: 'drawer' });
 
@@ -188,7 +251,7 @@ test('scores a correct guess and advances to the next drawer', () => {
     now: () => 5000,
     random: () => 0.99
   });
-  rooms.createRoom({ socketId: 'drawer', name: 'Drawer' });
+  rooms.createRoom({ socketId: 'drawer', name: 'Drawer', turnDurationSeconds: 60 });
   rooms.joinRoom({ code: 'TURN', socketId: 'guesser', name: 'Guesser' });
   rooms.startGame({ code: 'TURN', socketId: 'drawer', viewerSocketId: 'drawer' });
 
@@ -224,7 +287,7 @@ test('expires a turn when the one minute timer runs out', () => {
     words: ['시계'],
     now: () => now
   });
-  rooms.createRoom({ socketId: 'drawer', name: 'Drawer' });
+  rooms.createRoom({ socketId: 'drawer', name: 'Drawer', turnDurationSeconds: 60 });
   rooms.joinRoom({ code: 'TIME', socketId: 'guesser', name: 'Guesser' });
   rooms.startGame({ code: 'TIME', socketId: 'drawer', viewerSocketId: 'drawer' });
 
@@ -247,7 +310,7 @@ test('does not award points for a correct guess after the timer ends', () => {
     words: ['시계'],
     now: () => now
   });
-  rooms.createRoom({ socketId: 'drawer', name: 'Drawer' });
+  rooms.createRoom({ socketId: 'drawer', name: 'Drawer', turnDurationSeconds: 60 });
   rooms.joinRoom({ code: 'LATE', socketId: 'guesser', name: 'Guesser' });
   rooms.startGame({ code: 'LATE', socketId: 'drawer', viewerSocketId: 'drawer' });
 

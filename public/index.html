@@ -29,7 +29,7 @@
                 그림 시간
                 <select id="turnDurationSelect">
                   <option value="60">1분</option>
-                  <option value="120">2분</option>
+                  <option value="120" selected>2분</option>
                   <option value="180">3분</option>
                   <option value="300">5분</option>
                 </select>
@@ -37,16 +37,17 @@
               <label>
                 라운드
                 <select id="roundSelect">
-                  <option value="3">3라운드</option>
+                  <option value="3" selected>3라운드</option>
                   <option value="5">5라운드</option>
                   <option value="7">7라운드</option>
-                  <option value="10" selected>10라운드</option>
+                  <option value="10">10라운드</option>
                 </select>
               </label>
             </div>
             <div class="entry-actions">
               <button type="button" id="createRoomBtn">방 만들기</button>
               <button type="submit" class="secondary">방 참가</button>
+              <button type="button" id="spectateRoomBtn" class="secondary">관전하기</button>
             </div>
           </form>
           <p id="entryError" class="error" role="alert"></p>

@@ -37,10 +37,10 @@ export function createServerApp({ roomManager = new RoomManager(), autoAdvanceDe
         return;
       }
 
-      for (const player of room.players) {
-        io.to(player.socketId).emit('room:state', roomManager.getSnapshotForSocket({
+      for (const participant of [...room.players, ...room.spectators]) {
+        io.to(participant.socketId).emit('room:state', roomManager.getSnapshotForSocket({
           code: roomCode,
-          viewerSocketId: player.socketId
+          viewerSocketId: participant.socketId
         }));
       }
     };
@@ -123,6 +123,18 @@ export function createServerApp({ roomManager = new RoomManager(), autoAdvanceDe
       return snapshot;
     };
 
+    const attachSocketAsSpectator = ({ code, name, playerId }) => {
+      const snapshot = roomManager.spectateRoom({
+        code: String(code ?? '').trim().toUpperCase(),
+        socketId: socket.id,
+        name,
+        playerId
+      });
+      socket.join(snapshot.code);
+      socketRooms.set(socket.id, snapshot.code);
+      return snapshot;
+    };
+
     socket.on('room:create', ({ name, playerId, maxRounds, turnDurationSeconds }, reply) => {
       try {
         const snapshot = roomManager.createRoom({
@@ -145,6 +157,17 @@ export function createServerApp({ roomManager = new RoomManager(), autoAdvanceDe
     socket.on('room:join', ({ code, name, playerId }, reply) => {
       try {
         const snapshot = attachSocketToRoom({ code, name, playerId });
+        reply?.({ ok: true, snapshot });
+        emitRoom(snapshot.code);
+      } catch (error) {
+        reply?.({ ok: false, message: error.message });
+        sendError(error.message);
+      }
+    });
+
+    socket.on('room:spectate', ({ code, name, playerId }, reply) => {
+      try {
+        const snapshot = attachSocketAsSpectator({ code, name, playerId });
         reply?.({ ok: true, snapshot });
         emitRoom(snapshot.code);
       } catch (error) {
@@ -187,11 +210,13 @@ export function createServerApp({ roomManager = new RoomManager(), autoAdvanceDe
       }
     });
 
-    socket.on('chat:send', ({ message, code: payloadCode, name, playerId }, reply) => {
+    socket.on('chat:send', ({ message, code: payloadCode, name, playerId, role }, reply) => {
       try {
         let code = socketRooms.get(socket.id);
         if (!code && payloadCode) {
-          const snapshot = attachSocketToRoom({ code: payloadCode, name, playerId });
+          const snapshot = role === 'spectator'
+            ? attachSocketAsSpectator({ code: payloadCode, name, playerId })
+            : attachSocketToRoom({ code: payloadCode, name, playerId });
           code = snapshot.code;
         }
         const result = roomManager.submitChat({ code, socketId: socket.id, message });

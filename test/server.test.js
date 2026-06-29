@@ -29,6 +29,66 @@ test('serves a health check for deployment platforms', async () => {
   }
 });
 
+test('lets spectators join and chat without solving the answer', async () => {
+  const app = createServerApp();
+  await new Promise((resolve) => app.httpServer.listen(0, resolve));
+  const { port } = app.httpServer.address();
+  const url = `http://127.0.0.1:${port}`;
+  const sockets = [];
+
+  try {
+    const host = await connectClient(url);
+    sockets.push(host);
+    const created = await emitAck(host, 'room:create', {
+      name: 'Host',
+      playerId: 'host-player'
+    });
+    const code = created.snapshot.code;
+
+    const guest = await connectClient(url);
+    sockets.push(guest);
+    await emitAck(guest, 'room:join', {
+      code,
+      name: 'Guest',
+      playerId: 'guest-player'
+    });
+
+    const spectator = await connectClient(url);
+    sockets.push(spectator);
+    const spectated = await emitAck(spectator, 'room:spectate', {
+      code,
+      name: 'Viewer',
+      playerId: 'viewer-player'
+    });
+    const started = await emitAck(host, 'game:start');
+    const chatReply = await emitAck(spectator, 'chat:send', {
+      message: 'watching'
+    });
+    const answerReply = await emitAck(spectator, 'chat:send', {
+      message: started.snapshot.currentTurn.word
+    });
+    const room = app.roomManager.rooms.get(code);
+
+    assert.equal(spectated.ok, true);
+    assert.equal(spectated.snapshot.viewer.isSpectator, true);
+    assert.equal(spectated.snapshot.players.length, 2);
+    assert.equal(spectated.snapshot.spectators.length, 1);
+    assert.equal(chatReply.ok, true);
+    assert.equal(chatReply.correct, false);
+    assert.equal(answerReply.ok, false);
+    assert.equal(answerReply.message, 'Spectators cannot submit answers');
+    assert.equal(room.status, 'playing');
+    assert.equal(room.messages.at(-1).message, 'watching');
+    assert.equal(room.players.some((player) => player.socketId === spectator.id), false);
+    assert.equal(room.spectators[0].socketId, spectator.id);
+  } finally {
+    for (const socket of sockets) {
+      socket.disconnect();
+    }
+    await new Promise((resolve) => app.io.close(() => app.httpServer.close(resolve)));
+  }
+});
+
 test('automatically advances five seconds after a correct guess', async () => {
   const app = createServerApp({ autoAdvanceDelayMs: 20 });
   await new Promise((resolve) => app.httpServer.listen(0, resolve));
@@ -142,11 +202,16 @@ function connectClient(url) {
 }
 
 function emitAck(socket, event, payload) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${event} ack timeout`)), 1000);
+    const ack = (reply) => {
+      clearTimeout(timer);
+      resolve(reply);
+    };
     if (payload === undefined) {
-      socket.emit(event, resolve);
+      socket.emit(event, ack);
     } else {
-      socket.emit(event, payload, resolve);
+      socket.emit(event, payload, ack);
     }
   });
 }
