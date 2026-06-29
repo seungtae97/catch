@@ -124,11 +124,14 @@ test('ships with a diverse built-in word pool', () => {
   assert.ok(DEFAULT_WORDS.includes('타임머신'));
   assert.ok(DEFAULT_WORDS.includes('번개'));
   assert.ok(DEFAULT_WORDS.includes('치킨'));
-  assert.ok(DEFAULT_WORDS.includes('양자컴퓨터'));
-  assert.ok(DEFAULT_WORDS.includes('상대성이론'));
-  assert.ok(DEFAULT_WORDS.includes('판옵티콘'));
+  assert.ok(DEFAULT_WORDS.includes('경복궁'));
+  assert.ok(DEFAULT_WORDS.includes('모나리자'));
+  assert.ok(DEFAULT_WORDS.includes('나이아가라폭포'));
+  assert.ok(DEFAULT_WORDS.includes('방사선'));
   assert.ok(DEFAULT_WORDS.includes('전자현미경'));
   assert.ok(DEFAULT_WORDS.includes('만리장성'));
+  assert.equal(DEFAULT_WORDS.includes('판옵티콘'), false);
+  assert.equal(DEFAULT_WORDS.includes('방사선복'), false);
 });
 
 test('finishes the game after the selected number of complete rounds', () => {
